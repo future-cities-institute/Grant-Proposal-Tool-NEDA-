@@ -20,7 +20,7 @@ class ComplianceGapEvaluator:
         try:
             payload = self.llm_client.generate_json(prompt["system"], prompt["user"])
             return TypeAdapter(list[ComplianceGap]).validate_python(payload.get("compliance_gaps", []))
-        except ValidationError as exc:
-            raise ValueError(f"Invalid compliance gap payload returned by LLM client: {exc}") from exc
+        except ValidationError:
+            return build_fallback_gaps(context, retrieved)
         except Exception:
             return build_fallback_gaps(context, retrieved)
