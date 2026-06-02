@@ -1,9 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, FolderOpen, Library, Settings, UserRound } from "lucide-react";
+import { FileText, FolderOpen, Library, LogOut, Settings, UserRound } from "lucide-react";
+import { useAuth } from "@/components/Providers";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,17 @@ const navItems = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -55,12 +67,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Link href="/login">
-              <Button variant="outline" size="sm">
-                <UserRound className="mr-2 h-4 w-4" />
-                Sign in
+            {user ? (
+              <Button variant="outline" size="sm" onClick={handleSignOut} disabled={isSigningOut}>
+                <LogOut className="mr-2 h-4 w-4" />
+                {isSigningOut ? "Signing out" : "Sign out"}
               </Button>
-            </Link>
+            ) : (
+              <Link href="/login">
+                <Button variant="outline" size="sm">
+                  <UserRound className="mr-2 h-4 w-4" />
+                  Sign in
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
