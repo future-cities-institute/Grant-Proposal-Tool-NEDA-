@@ -47,17 +47,23 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
     except ImportError as exc:
         raise RuntimeError("PyJWT is required when AUTH_MODE=supabase.") from exc
 
-    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
-    if not jwt_secret:
-        raise RuntimeError("SUPABASE_JWT_SECRET is required when AUTH_MODE=supabase.")
+    header = jwt.get_unverified_header(token)
+    algorithm = str(header.get("alg") or "")
 
-    payload = jwt.decode(
-        token,
-        jwt_secret,
-        algorithms=["HS256"],
-        audience="authenticated",
-        options={"verify_exp": True},
-    )
+    if algorithm.startswith("HS"):
+        jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+        if not jwt_secret:
+            raise RuntimeError("SUPABASE_JWT_SECRET is required for HS256 Supabase tokens.")
+        payload = jwt.decode(
+            token,
+            jwt_secret,
+            algorithms=[algorithm],
+            audience="authenticated",
+            options={"verify_exp": True},
+        )
+    else:
+        payload = _verify_supabase_jwks_token(jwt, token, algorithm)
+
     user_meta = payload.get("user_metadata") or {}
     name = (
         user_meta.get("full_name")
@@ -70,6 +76,37 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
         "email": str(payload.get("email") or ""),
         "name": str(name),
     }
+
+
+def _verify_supabase_jwks_token(jwt_module: Any, token: str, algorithm: str) -> dict[str, Any]:
+    supabase_url = (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or ""
+    ).strip().rstrip("/")
+    explicit_jwks_url = os.getenv("SUPABASE_JWKS_URL", "").strip()
+    if not explicit_jwks_url and not supabase_url:
+        raise RuntimeError("SUPABASE_URL or SUPABASE_JWKS_URL is required for asymmetric Supabase tokens.")
+
+    jwks_urls = [explicit_jwks_url] if explicit_jwks_url else [
+        f"{supabase_url}/auth/v1/.well-known/jwks.json",
+        f"{supabase_url}/auth/v1/jwks",
+    ]
+    last_error: Exception | None = None
+    for jwks_url in jwks_urls:
+        try:
+            jwk_client = jwt_module.PyJWKClient(jwks_url)
+            signing_key = jwk_client.get_signing_key_from_jwt(token)
+            return jwt_module.decode(
+                token,
+                signing_key.key,
+                algorithms=[algorithm],
+                audience="authenticated",
+                options={"verify_exp": True},
+            )
+        except Exception as exc:
+            last_error = exc
+    raise RuntimeError(f"Could not verify Supabase JWT with JWKS: {last_error}") from last_error
 
 
 def verify_cognito_token(token: str) -> dict[str, Any]:

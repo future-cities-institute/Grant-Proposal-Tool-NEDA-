@@ -10,6 +10,8 @@ services:
         value: supabase
       - key: SUPABASE_JWT_SECRET
         sync: false   # set in Render dashboard
+      - key: SUPABASE_URL
+        sync: false   # set to the Supabase project URL for JWKS token verification
       - key: DATABASE_URL
         sync: false   # set in Render dashboard (Supabase Postgres connection string)
       - key: OPENAI_API_KEY
