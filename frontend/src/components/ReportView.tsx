@@ -561,7 +561,7 @@ export function ReportView({
                         </span>
                       )}
                       {needsReviewPrompts.length > 0 && (
-                        <span className="rounded-full border border-violet-500/40 bg-violet-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-violet-300">
+                        <span className="rounded-full border border-violet-500/40 bg-violet-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:bg-violet-950/20 dark:text-violet-300">
                           {needsReviewPrompts.length} review
                         </span>
                       )}
@@ -607,17 +607,17 @@ export function ReportView({
                   )}
 
                   {lowConfidencePrompts.length > 0 && (
-                    <div className="rounded-lg border border-violet-500/30 bg-violet-950/10 p-3">
-                      <p className="text-sm font-medium text-violet-200">
+                    <div className="rounded-lg border border-violet-500/35 bg-violet-50/90 p-3 dark:bg-violet-950/20">
+                      <p className="text-sm font-medium text-violet-800 dark:text-violet-200">
                         Low-confidence answers to review ({lowConfidencePrompts.length})
                       </p>
                       <div className="mt-2 space-y-2">
                         {lowConfidencePrompts.map((item) => (
-                          <div key={`${sec.key}-${item.promptId}-low-confidence`} className="text-sm text-muted-foreground">
+                          <div key={`${sec.key}-${item.promptId}-low-confidence`} className="text-sm text-slate-600 dark:text-muted-foreground">
                             <span className="font-medium text-foreground">{item.promptId}: </span>
                             {item.promptText}
                             {item.reviewNote && (
-                              <p className="mt-1 text-xs text-violet-200">{item.reviewNote}</p>
+                              <p className="mt-1 text-xs font-medium text-violet-700 dark:text-violet-200">{item.reviewNote}</p>
                             )}
                           </div>
                         ))}
@@ -641,7 +641,7 @@ export function ReportView({
                                 {item.promptId}: {item.promptText}
                               </span>
                               {item.status === "needs_review" && (
-                                <span className="block text-xs text-violet-300">
+                                <span className="block text-xs font-medium text-violet-700 dark:text-violet-300">
                                   {item.reviewNote || "Please confirm before submission."}
                                 </span>
                               )}
