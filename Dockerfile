@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
 COPY backend/ ./backend/
+COPY data/processed/ ./data/processed/
 
 ENV PYTHONPATH=/app
 ENV PORT=8000
