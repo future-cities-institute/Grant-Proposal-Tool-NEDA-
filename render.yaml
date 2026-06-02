@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: grant-proposal-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: AUTH_MODE
+        value: supabase
+      - key: SUPABASE_JWT_SECRET
+        sync: false   # set in Render dashboard
+      - key: DATABASE_URL
+        sync: false   # set in Render dashboard (Supabase Postgres connection string)
+      - key: OPENAI_API_KEY
+        sync: false   # set in Render dashboard
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4o-mini
+      - key: EMBED_MODEL
+        value: text-embedding-3-small
+      - key: PYTHONPATH
+        value: /app

@@ -62,57 +62,66 @@ export function ProposalSections({
         <CardContent>
           {showParseWarning && (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-              Parse quality looks low ({count} section detected). Consider uploading a cleaner text-based PDF/DOCX, or continue and manually edit section expectations.
+              Document extraction confidence is low ({count} section detected). Consider uploading a cleaner text-based PDF/DOCX, or continue and manually edit the section list.
             </div>
           )}
           {parserMeta && (
             <details className="mb-4 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
               <summary className="cursor-pointer font-medium text-foreground">
-                Extraction diagnostics
+                Document review details
               </summary>
               <div className="mt-3 space-y-2">
                 <p>
-                  Mode: <span className="font-medium text-foreground">{parserMeta.mode || "unknown"}</span>
-                  {" | "}
                   Confidence: <span className="font-medium text-foreground">{parseConfidence || "unknown"}</span>
                   {" | "}
-                  Model: <span className="font-medium text-foreground">{parserMeta.model || "unknown"}</span>
-                </p>
-                <p>
-                  Raw text: <span className="font-medium text-foreground">{parserMeta.raw_text_length || 0}</span> chars
+                  Text extracted: <span className="font-medium text-foreground">{parserMeta.raw_text_length || 0}</span> chars
                   {" | "}
-                  Heuristic sections: <span className="font-medium text-foreground">{parserMeta.heuristic_section_count || 0}</span>
-                  {" | "}
-                  Final sections: <span className="font-medium text-foreground">{parserMeta.final_section_count || 0}</span>
+                  Required sections: <span className="font-medium text-foreground">{parserMeta.final_section_count || 0}</span>
                 </p>
+                {parserMeta.document_ai_used && (
+                  <p>
+                    Document parsing: <span className="font-medium text-foreground">enhanced</span>
+                    {" | "}
+                    Pages: <span className="font-medium text-foreground">{parserMeta.document_ai_page_count || 0}</span>
+                    {" | "}
+                    Form fields: <span className="font-medium text-foreground">{parserMeta.document_ai_form_field_count || 0}</span>
+                    {" | "}
+                    Tables: <span className="font-medium text-foreground">{parserMeta.document_ai_table_count || 0}</span>
+                  </p>
+                )}
+                {parserMeta.document_ai_error && (
+                  <p className="text-amber-700 dark:text-amber-300">
+                    Document parsing note: {parserMeta.document_ai_error}
+                  </p>
+                )}
                 {fallbackReasons.length > 0 && (
                   <p>
-                    Fallback reasons: <span className="font-medium text-foreground">{fallbackReasons.join(", ")}</span>
+                    Review notes: <span className="font-medium text-foreground">{fallbackReasons.join(", ")}</span>
                   </p>
                 )}
                 {diagnostics.length > 0 && (
                   <p>
-                    Diagnostics: <span className="font-medium text-foreground">{diagnostics.join(", ")}</span>
+                    Additional notes: <span className="font-medium text-foreground">{diagnostics.join(", ")}</span>
                   </p>
                 )}
                 {parserMeta.used_default_template && (
                   <p className="text-amber-700 dark:text-amber-300">
-                    The parser recovered with the default 5-section template because extraction confidence was too low.
+                    A standard proposal outline was used because the uploaded document did not provide enough clear section structure.
                   </p>
                 )}
                 {llmError && (
                   <p className="text-destructive">
-                    LLM fallback error: {llmError}
+                    Section review note: {llmError}
                   </p>
                 )}
                 {heuristicPreview.length > 0 && (
                   <p>
-                    Heuristic preview: <span className="font-medium text-foreground">{heuristicPreview.join(" | ")}</span>
+                    Initial section matches: <span className="font-medium text-foreground">{heuristicPreview.join(" | ")}</span>
                   </p>
                 )}
                 {sectionPreview.length > 0 && (
                   <p>
-                    Final preview: <span className="font-medium text-foreground">{sectionPreview.join(" | ")}</span>
+                    Confirmed sections: <span className="font-medium text-foreground">{sectionPreview.join(" | ")}</span>
                   </p>
                 )}
               </div>
@@ -150,6 +159,36 @@ export function ProposalSections({
                     <p className="mt-1 text-xs text-muted-foreground">
                       Word limit: {sec.word_limit}
                     </p>
+                  )}
+                  {sec.prompt_items && sec.prompt_items.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-muted-foreground">
+                        {sec.prompt_items.length} prompt{sec.prompt_items.length === 1 ? "" : "s"} detected
+                      </p>
+                      <div className="space-y-1">
+                        {sec.prompt_items.slice(0, 4).map((item) => (
+                          <p key={item.prompt_id || item.prompt_text} className="text-xs text-muted-foreground">
+                            - {item.prompt_id ? `${item.prompt_id}: ` : ""}{item.prompt_text}
+                            {item.word_limit ? ` (${item.word_limit} words)` : ""}
+                          </p>
+                        ))}
+                        {sec.prompt_items.length > 4 && (
+                          <details className="text-xs text-muted-foreground">
+                            <summary className="cursor-pointer select-none">
+                              + {sec.prompt_items.length - 4} more prompt{sec.prompt_items.length - 4 === 1 ? "" : "s"}
+                            </summary>
+                            <div className="mt-2 space-y-1">
+                              {sec.prompt_items.slice(4).map((item) => (
+                                <p key={item.prompt_id || item.prompt_text} className="text-xs text-muted-foreground">
+                                  - {item.prompt_id ? `${item.prompt_id}: ` : ""}{item.prompt_text}
+                                  {item.word_limit ? ` (${item.word_limit} words)` : ""}
+                                </p>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="shrink-0">

@@ -151,6 +151,8 @@ class ProposalAnalysisService:
         proposal_id: str,
         section_key: str,
         instruction: str,
+        rewrite_scope: str = "section",
+        target_text: str | None = None,
         metric_id: str | None = None,
         issue_id: str | None = None,
         issue_message: str | None = None,
@@ -161,9 +163,11 @@ class ProposalAnalysisService:
         if not section:
             raise KeyError(section_key)
 
+        source_text = (target_text or "").strip() if rewrite_scope == "paragraph" else ""
+        text_to_rewrite = source_text or section.body
         rationale = f"Rewritten to address {metric_id.replace('_', ' ') if metric_id else 'the selected review issues'}."
         rewritten_text = _heuristic_rewrite(
-            section.body,
+            text_to_rewrite,
             instruction,
             section.title,
             metric_id=metric_id,
@@ -175,6 +179,8 @@ class ProposalAnalysisService:
             proposal_id=proposal_id,
             section_key=section_key,
             rewritten_text=rewritten_text,
+            rewrite_scope="paragraph" if rewrite_scope == "paragraph" and source_text else "section",
+            source_text=source_text or None,
             rationale=rationale,
             references=[],
         )
@@ -239,7 +245,7 @@ class ProposalAnalysisService:
             )
 
         categories = _build_metric_categories(evaluated_sections)
-        overall_score = round(sum(category.score for category in categories) / max(1, len(categories)))
+        overall_score = _score_overall(categories)
         issue_count = sum(category.issues for category in categories)
         now = datetime.now(timezone.utc)
         return ProposalAnalysisResponse(
@@ -283,8 +289,7 @@ def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCate
     for metric_id, label, category_id in METRIC_SPECS:
         metric_issues = _build_metric_issues(metric_id, label, sections, section_map)
         issue_buckets[metric_id] = metric_issues
-        penalty = sum(18 if issue.severity == "critical" else 12 if issue.severity == "warning" else 8 for issue in metric_issues)
-        metric_scores[metric_id] = max(28, 100 - penalty)
+        metric_scores[metric_id] = _score_metric(metric_issues)
 
     categories: List[MetricCategoryResult] = []
     for category_id, label in CATEGORY_LABELS.items():
@@ -313,12 +318,88 @@ def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCate
             MetricCategoryResult(
                 id=category_id,
                 label=label,
-                score=round(sum(metric.score for metric in metrics) / max(1, len(metrics))),
+                score=_score_category(metrics),
                 issues=sum(metric.issues_count for metric in metrics),
                 metrics=metrics,
             )
         )
     return categories
+
+
+def _score_metric(issues: List[MetricIssue]) -> int:
+    if not issues:
+        return 94
+
+    deduction = 0.0
+    for index, issue in enumerate(issues):
+        severity_weight = {
+            "critical": 24,
+            "warning": 16,
+            "info": 8,
+            "success": 0,
+        }.get(issue.severity, 8)
+        confidence_factor = 0.72 + (issue.confidence_score / 100.0) * 0.68
+        anchor_factor = {
+            "text": 1.08,
+            "paragraph": 1.0,
+            "section": 0.82,
+        }.get(issue.anchor_type, 0.9)
+        recurrence_discount = max(0.65, 1 - index * 0.12)
+        deduction += severity_weight * confidence_factor * anchor_factor * recurrence_discount
+
+    return max(18, min(100, round(100 - deduction)))
+
+
+def _score_category(metrics: List[MetricResult]) -> int:
+    if not metrics:
+        return 0
+
+    weighted_total = 0.0
+    total_weight = 0.0
+    for metric in metrics:
+        weight = 1.0
+        if metric.id in {
+            "program_alignment",
+            "budget_alignment",
+            "quantifiable_impact",
+            "section_completeness",
+            "community_engagement",
+            "ocap_data_governance",
+            "inuit_specific_alignment",
+        }:
+            weight = 1.25
+        elif metric.id in {"clarity_specificity", "structural_readiness", "tcps2_ethical_research"}:
+            weight = 1.1
+        weighted_total += metric.score * weight
+        total_weight += weight
+
+    issue_pressure = sum(metric.issues_count for metric in metrics)
+    category_score = (weighted_total / max(1.0, total_weight)) - min(8, issue_pressure * 0.75)
+    return max(15, min(100, round(category_score)))
+
+
+def _score_overall(categories: List[MetricCategoryResult]) -> int:
+    if not categories:
+        return 0
+
+    category_weights = {
+        "content": 0.26,
+        "sections": 0.18,
+        "funding_fit": 0.28,
+        "indigenous_governance_ethics": 0.28,
+    }
+    weighted_total = 0.0
+    total_weight = 0.0
+    total_issues = 0
+    for category in categories:
+        weight = category_weights.get(category.id, 0.25)
+        weighted_total += category.score * weight
+        total_weight += weight
+        total_issues += category.issues
+
+    issue_pressure_penalty = min(10, total_issues * 0.35)
+    overall = (weighted_total / max(1.0, total_weight)) - issue_pressure_penalty
+    return max(15, min(100, round(overall)))
 
 
 def _build_metric_issues(metric_id: str, label: str, sections: List[ProposalSection], section_map: Dict[str, ProposalSection]) -> List[MetricIssue]:
@@ -472,10 +553,78 @@ def _build_report_summary(sections: List[ProposalSection], categories: List[Metr
     issue_count = sum(category.issues for category in categories)
     section_count = len(sections)
     weak_labels = ", ".join(category.label for category in weakest)
+    overall_score = _score_overall(categories)
     return (
         f"Analyzed {section_count} proposal sections and found {issue_count} improvement opportunities. "
-        f"The weakest areas are {weak_labels}, and those should be the first focus for revision."
+        f"Current readiness score: {overall_score}/100. The weakest areas are {weak_labels}, and those should be the first focus for revision."
     )
+
+
+def _looks_like_uploaded_draft_section_heading(line: str) -> bool:
+    text = (line or "").strip()
+    if not text:
+        return False
+    return bool(
+        re.match(r"^\d+\.\s+section\s+\d+[:.\-]\s+.+$", text, flags=re.IGNORECASE)
+        or re.match(r"^section\s+\d+[:.\-]\s+.+$", text, flags=re.IGNORECASE)
+    )
+
+
+def _extract_uploaded_draft_sections_by_heading(cleaned_text: str) -> List[ProposalSection]:
+    lines = cleaned_text.splitlines()
+    heading_indices = [idx for idx, line in enumerate(lines) if _looks_like_uploaded_draft_section_heading(line)]
+    if len(heading_indices) < 2:
+        return []
+
+    sections: List[ProposalSection] = []
+    preface_lines = [line.strip() for line in lines[: heading_indices[0]] if line.strip()]
+    preface_body = _clean_section_body("\n".join(preface_lines))
+    if preface_body and len(preface_body.split()) >= 20:
+        sections.append(
+            ProposalSection(
+                key="document_overview",
+                title="Document Overview",
+                body=preface_body,
+                order=0,
+                word_limit=_extract_inline_word_limit(preface_body),
+            )
+        )
+
+    for idx, start in enumerate(heading_indices):
+        end = heading_indices[idx + 1] if idx + 1 < len(lines) else len(lines)
+        title = _clean_section_title(lines[start].strip())
+        body_lines = [line.rstrip() for line in lines[start + 1 : end]]
+        body = _clean_section_body("\n".join(body_lines))
+        if not body:
+            continue
+        key_base = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")[:60] or f"section_{idx + 1}"
+        sections.append(
+            ProposalSection(
+                key=key_base,
+                title=title,
+                body=body,
+                order=len(sections),
+                word_limit=_extract_inline_word_limit(body),
+            )
+        )
+
+    return sections
+
+
+def _should_prefer_uploaded_heading_sections(cleaned_text: str, parsed_sections: List[ProposalSection]) -> bool:
+    fallback_sections = _extract_uploaded_draft_sections_by_heading(cleaned_text)
+    if not fallback_sections:
+        return False
+    if not parsed_sections:
+        return True
+
+    parsed_body_chars = sum(len((section.body or "").strip()) for section in parsed_sections)
+    cleaned_chars = len(cleaned_text.strip())
+    coverage_ratio = (parsed_body_chars / cleaned_chars) if cleaned_chars else 0.0
+    first_title = (parsed_sections[0].title or "").strip()
+    starts_mid_document = bool(re.match(r"^\d+[A-Za-z]?:", first_title))
+
+    return starts_mid_document or coverage_ratio < 0.7 or len(fallback_sections) > len(parsed_sections)
 
 
 def _extract_proposal_sections(raw_text: str) -> List[ProposalSection]:
@@ -502,6 +651,9 @@ def _extract_proposal_sections(raw_text: str) -> List[ProposalSection]:
                     word_limit=section.get("word_limit"),
                 )
             )
+
+    if _should_prefer_uploaded_heading_sections(cleaned_text, sections):
+        sections = _extract_uploaded_draft_sections_by_heading(cleaned_text)
 
     if sections:
         return _merge_fragmented_sections(sections)
@@ -564,8 +716,22 @@ def _heuristic_rewrite(
         return _rewrite_grammar(cleaned, title, focus_line)
     if metric_id == "program_alignment":
         return _rewrite_program_alignment(cleaned, title, focus_line)
+    if metric_id == "community_need_problem_framing":
+        return _rewrite_project_need(cleaned, title, focus_line)
+    if metric_id == "eligibility_requirements_fit":
+        return _rewrite_eligibility_fit(cleaned, title, focus_line)
     if metric_id == "deliverables_activities_fit":
         return _rewrite_deliverables(cleaned, title, focus_line)
+    if metric_id == "community_engagement":
+        return _rewrite_indigenous_engagement(cleaned, title, focus_line)
+    if metric_id == "ocap_data_governance":
+        return _rewrite_data_governance(cleaned, title, focus_line)
+    if metric_id == "tcps2_ethical_research":
+        return _rewrite_indigenous_ethics(cleaned, title, focus_line)
+    if metric_id == "inuit_specific_alignment":
+        return _rewrite_inuit_alignment(cleaned, title, focus_line)
+    if metric_id in {"section_completeness", "missing_required_components", "structural_readiness"}:
+        return _rewrite_structural_readiness(cleaned, title, focus_line)
 
     return _rewrite_generic(cleaned, title, focus_line, issue_message=issue_message, issue_id=issue_id)
 
@@ -674,6 +840,76 @@ def _rewrite_deliverables(text: str, title: str, focus_line: str) -> str:
     return (
         f"{base}\n\n"
         "Core deliverables should include named outputs, milestone dates, responsible partners, and completion indicators so progress can be tracked clearly."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_project_need(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} This need should be framed with local evidence, current consequences for the community, and the reason action is timely.\n\n"
+        "A stronger version should connect the challenge to lived community priorities, available data or observations, who is affected, and what changes if the project is funded."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_eligibility_fit(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} The section should make the applicant's eligibility and fit with funder requirements explicit.\n\n"
+        "Add a direct statement naming the eligible applicant, the eligible activity area, the relevant program objective, and any partner or community role that strengthens fit."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_indigenous_engagement(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} Community participation should be described as an active governance and decision-making role, not only consultation.\n\n"
+        "Strengthen this by naming who was engaged, how priorities were identified, how community direction shaped the project, and how feedback will continue during delivery."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_data_governance(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} Any data, stories, survey results, or community knowledge should be governed through community-approved ownership, access, use, and storage practices.\n\n"
+        "Add the consent pathway, who controls access to information, how results will be validated with the community, and how sensitive knowledge will be protected."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_indigenous_ethics(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} Ethical alignment should show respect for Indigenous governance, informed consent, reciprocity, and community benefit.\n\n"
+        "Clarify whether the work involves research, how approvals or community review will occur, how participants are protected, and how results are returned in useful forms."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_inuit_alignment(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:2]) if sentences else text
+    return (
+        f"{base} For Inuit-focused work, the proposal should show alignment with Inuit governance, Inuit Qaujimajatuqangit, local priorities, and service to the community.\n\n"
+        "Strengthen this by naming Inuit community or organization roles, the IQ principles reflected in the approach, how Inuit knowledge guides decisions, and how skills or benefits remain locally."
+        f" {focus_line}."
+    )
+
+
+def _rewrite_structural_readiness(text: str, title: str, focus_line: str) -> str:
+    sentences = _sentence_list(text)
+    base = " ".join(sentences[:3]) if sentences else text
+    return (
+        f"{base}\n\n"
+        "To make this section submission-ready, add the missing components in a clear order: context, activity, responsible party, timeline, output, risk or dependency, and measurable result."
         f" {focus_line}."
     )
 
@@ -855,7 +1091,7 @@ def _word_limit_warnings(section_text: str, word_limit: int | None) -> List[Warn
         return []
     word_count = len(re.findall(r"\b\w+\b", section_text or ""))
     warnings: List[WarningEntry] = []
-    if word_count > word_limit:
+    if word_count > word_limit and not _looks_like_structured_prompt_response(section_text):
         warnings.append(
             WarningEntry(
                 type="word_limit_exceeded",
@@ -872,6 +1108,14 @@ def _word_limit_warnings(section_text: str, word_limit: int | None) -> List[Warn
             )
         )
     return warnings
+
+
+def _looks_like_structured_prompt_response(section_text: str) -> bool:
+    labels = re.findall(r"(?im)^\s*prompt[_\s-]*\d+\s*:", section_text or "")
+    if len(labels) >= 2:
+        return True
+    answer_blocks = re.findall(r"(?im)^\s*(?:answer|response)[_\s-]*\d+\s*:", section_text or "")
+    return len(answer_blocks) >= 2
 
 
 def _dedupe_warnings(warnings: List[WarningEntry]) -> List[WarningEntry]:
@@ -937,7 +1181,9 @@ def _build_extraction_diagnostics(
     else:
         confidence = "low"
 
-    preview_mode = "continuous" if confidence == "low" or numbering_gaps_detected else "sectioned"
+    substantial_sections = sum(1 for section in sections if len((section.body or "").split()) >= 40)
+    has_useful_section_structure = len(sections) >= 4 and substantial_sections >= 3
+    preview_mode = "continuous" if confidence == "low" or (numbering_gaps_detected and not has_useful_section_structure) else "sectioned"
     return ProposalExtractionDiagnostics(
         extractor=extractor,
         confidence=confidence,

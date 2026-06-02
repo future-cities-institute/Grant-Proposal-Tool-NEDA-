@@ -13,8 +13,8 @@ import {
   type ComplianceWarning,
   type Draft,
   type DraftSection,
+  type PromptCoverageSection,
   type Requirements,
-  type RewriteReference,
   evaluateSectionCompliance,
   rewriteSection,
 } from "@/lib/api";
@@ -36,15 +36,15 @@ type SectionEditorState = {
   versions: string[];
   index: number;
   working: string;
-  prompt: string;
-  suggestion: string;
-  references: RewriteReference[];
   isOpen: boolean;
+  missingInputValues: Record<string, string>;
+  showAllMissing: boolean;
 };
 
 export function ReportView({
   draft,
   enhanced,
+  promptCoverage,
   validation,
   requirements,
   profile,
@@ -52,6 +52,7 @@ export function ReportView({
 }: {
   draft: Draft;
   enhanced: Record<string, string>;
+  promptCoverage: Record<string, PromptCoverageSection>;
   validation: ComplianceSummary | null;
   requirements: Requirements;
   profile: CommunityProfile;
@@ -71,15 +72,14 @@ export function ReportView({
   useEffect(() => {
     const initial: Record<string, SectionEditorState> = {};
     for (const sec of sections) {
-      const baseText = (enhanced[sec.key] || sec.body || "").trim();
+      const baseText = stripPromptMetadataLines(enhanced[sec.key] || sec.body || "");
       initial[sec.key] = {
         versions: [baseText],
         index: 0,
         working: baseText,
-        prompt: "",
-        suggestion: "",
-        references: [],
         isOpen: false,
+        missingInputValues: {},
+        showAllMissing: false,
       };
     }
     if (sections[0]) {
@@ -153,6 +153,43 @@ export function ReportView({
       acc[label] = [...(acc[label] || []), gap];
       return acc;
     }, {});
+  }, [gaps]);
+
+  const missingInfoSections = useMemo(() => {
+    return finalSections
+      .map((section) => {
+        const sectionResult = sectionResults[section.key];
+        const sectionWarnings = sectionResult?.warnings ?? [];
+        const expectedPromptItems =
+          section.prompt_items || requirements.sections.find((item) => item.key === section.key)?.prompt_items || [];
+        const reviewItems = extractPromptReviewItems(
+          section.body || "",
+          promptCoverage[section.key],
+          expectedPromptItems
+        );
+        const missingPrompts = reviewItems.filter((item) => item.status === "missing");
+        const needsReviewPrompts = reviewItems.filter((item) => item.status === "needs_review");
+        const priorityWarnings = sectionWarnings.filter((warning) =>
+          PRIORITY_WARNING_TYPES.has(warning.type)
+        );
+        return {
+          key: section.key,
+          title: section.title || section.key,
+          missingPrompts,
+          needsReviewPrompts,
+          priorityWarnings,
+          score: missingPrompts.length * 2 + needsReviewPrompts.length + priorityWarnings.length,
+        };
+      })
+      .filter((section) => section.score > 0)
+      .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+  }, [finalSections, promptCoverage, requirements.sections, sectionResults]);
+
+  const topQualityIssues = useMemo(() => {
+    return gaps
+      .slice()
+      .sort((a, b) => b.confidence_score - a.confidence_score)
+      .slice(0, 6);
   }, [gaps]);
 
   const buildFinalSections = (): DraftSection[] => finalSections;
@@ -280,22 +317,38 @@ export function ReportView({
     setSectionState(key, (s) => ({ ...s, working: s.versions[s.index] || "" }));
   };
 
-  const applySuggestion = (key: string) => {
-    setSectionState(key, (s) => {
-      if (!s.suggestion.trim()) return s;
-      const nextVersions = [...s.versions.slice(0, s.index + 1), s.suggestion.trim()];
-      return {
-        ...s,
-        versions: nextVersions,
-        index: nextVersions.length - 1,
-        working: s.suggestion.trim(),
-      };
-    });
-  };
-
-  const generateSuggestion = async (key: string, title: string) => {
+  const generateMissingInfoSuggestion = async (key: string, title: string) => {
     const state = sectionStates[key];
-    if (!state || !state.prompt.trim()) return;
+    if (!state) return;
+    const section = sections.find((item) => item.key === key);
+    const expectedPromptItems =
+      section?.prompt_items || requirements.sections.find((item) => item.key === key)?.prompt_items || [];
+    const reviewItems = extractPromptReviewItems(
+      state.working || "",
+      promptCoverage[key],
+      expectedPromptItems
+    );
+    const actionableItems = reviewItems.filter((item) => item.status !== "answered");
+    const filledInputs = actionableItems
+      .map((item) => ({
+        ...item,
+        value: (state.missingInputValues[item.promptId] || "").trim(),
+      }))
+      .filter((item) => item.value);
+
+    if (filledInputs.length === 0) {
+      setSectionError("Add at least one missing or uncertain answer before generating a targeted section update.");
+      return;
+    }
+
+    const instruction = [
+      "Update this section by filling only the missing or uncertain prompt answers listed below.",
+      "Preserve the existing question-by-question structure.",
+      "Do not rewrite answered prompts unless needed for consistency.",
+      "Use these user-provided facts as the primary source for the missing items:",
+      ...filledInputs.map((item) => `${item.promptId}: ${item.value}`),
+    ].join("\n");
+
     setSectionError("");
     setBusyKey(key);
     try {
@@ -303,17 +356,23 @@ export function ReportView({
         section_key: key,
         section_title: title,
         current_text: state.working,
-        instruction: state.prompt,
+        instruction,
         requirements,
         profile,
       });
+      const nextText = stripPromptMetadataLines(out.text || "");
+      if (!nextText) {
+        throw new Error("The targeted update did not return section text.");
+      }
       setSectionState(key, (s) => ({
         ...s,
-        suggestion: out.text || "",
-        references: out.references || [],
+        versions: [...s.versions.slice(0, s.index + 1), nextText],
+        index: s.index + 1,
+        working: nextText,
+        missingInputValues: {},
       }));
     } catch (e) {
-      setSectionError(e instanceof Error ? e.message : "Could not generate a section suggestion.");
+      setSectionError(e instanceof Error ? e.message : "Could not generate a targeted section update.");
     } finally {
       setBusyKey(null);
     }
@@ -323,10 +382,10 @@ export function ReportView({
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Your proposal draft</h2>
-        <Link href="/">
+        <Link href="/dashboard">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Home
+            Dashboard
           </Button>
         </Link>
       </div>
@@ -351,6 +410,90 @@ export function ReportView({
         </CardContent>
       </Card>
 
+      <Card
+        className={
+          missingInfoSections.length > 0 || topQualityIssues.length > 0
+            ? "border-amber-500/40 bg-amber-950/10"
+            : "border-emerald-500/30 bg-emerald-950/10"
+        }
+      >
+        <CardHeader>
+          <CardTitle className="text-base">Top priorities</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Start with missing prompt answers when we can detect them, then review section-level
+            warnings and compliance gaps.
+          </p>
+          {missingInfoSections.length > 0 ? (
+            <div className="space-y-3">
+              {missingInfoSections.slice(0, 6).map((section) => (
+                <div key={section.key} className="rounded-lg border border-amber-500/20 bg-card/40 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <p className="font-medium text-foreground">{section.title}</p>
+                      {section.missingPrompts.length > 0 && (
+                        <ul className="space-y-1 text-sm text-muted-foreground">
+                          {section.missingPrompts.slice(0, 4).map((item) => (
+                            <li key={`${section.key}-${item.promptId}`}>
+                              <span className="font-medium text-foreground">{item.promptId}</span>
+                              {`: ${item.promptText}`}
+                            </li>
+                          ))}
+                          {section.missingPrompts.length > 4 && (
+                            <li>{`+ ${section.missingPrompts.length - 4} more missing prompts`}</li>
+                          )}
+                        </ul>
+                      )}
+                      {section.needsReviewPrompts.length > 0 && (
+                        <ul className="space-y-1 text-sm text-muted-foreground">
+                          {section.needsReviewPrompts.slice(0, 3).map((item) => (
+                            <li key={`${section.key}-${item.promptId}-review`}>
+                              <span className="font-medium text-foreground">{item.promptId}</span>
+                              {`: needs review${item.reviewNote ? ` - ${item.reviewNote}` : ""}`}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {section.priorityWarnings.map((warning, index) => (
+                        <p key={`${section.key}-${warning.type}-${index}`} className="text-sm text-muted-foreground">
+                          {warning.message}
+                        </p>
+                      ))}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection(section.key)}>
+                      Open section
+                      <ExternalLink className="ml-2 h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : topQualityIssues.length > 0 ? (
+            <div className="space-y-3">
+              {topQualityIssues.map((gap) => (
+                <div key={`${gap.section}-${gap.failed_check_id}`} className="rounded-lg border border-amber-500/20 bg-card/40 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {gap.section_label || gap.section.replaceAll("_", " ")}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">{gap.message}</p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection(gap.section)}>
+                      Open section
+                      <ExternalLink className="ml-2 h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-emerald-300">No priority issues detected yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="space-y-4">
         {sections.map((sec) => {
           const state = sectionStates[sec.key];
@@ -360,6 +503,21 @@ export function ReportView({
           const sectionResult = sectionResults[sec.key];
           const sectionWarnings = sectionResult?.warnings ?? [];
           const sectionGaps = sectionResult?.compliance_gaps ?? [];
+          const expectedPromptItems =
+            sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items || [];
+          const reviewItems = extractPromptReviewItems(
+            state.working || "",
+            promptCoverage[sec.key],
+            expectedPromptItems
+          );
+          const missingPrompts = reviewItems.filter((item) => item.status === "missing");
+          const needsReviewPrompts = reviewItems.filter((item) => item.status === "needs_review");
+          const lowConfidencePrompts = needsReviewPrompts.filter((item) => item.confidence === "low");
+          const actionablePromptItems = [...missingPrompts, ...lowConfidencePrompts];
+          const visibleMissingPrompts = state.showAllMissing ? actionablePromptItems : actionablePromptItems.slice(0, 4);
+          const priorityWarnings = sectionWarnings.filter((warning) =>
+            PRIORITY_WARNING_TYPES.has(warning.type)
+          );
 
           return (
             <Card
@@ -397,6 +555,16 @@ export function ReportView({
                           ? `${sectionWarnings.length} warning${sectionWarnings.length === 1 ? "" : "s"}`
                           : "no warnings"}
                       </span>
+                      {missingPrompts.length > 0 && (
+                        <span className="rounded-full border border-amber-500/40 bg-amber-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-300">
+                          {missingPrompts.length} missing
+                        </span>
+                      )}
+                      {needsReviewPrompts.length > 0 && (
+                        <span className="rounded-full border border-violet-500/40 bg-violet-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-violet-300">
+                          {needsReviewPrompts.length} review
+                        </span>
+                      )}
                     </div>
                   </div>
                   {state.isOpen ? (
@@ -408,8 +576,7 @@ export function ReportView({
               </CardHeader>
               {state.isOpen && (
                 <CardContent className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-5">
-                    <div className="space-y-3 lg:col-span-3">
+                  <div className="space-y-3">
                       <p className="text-xs text-muted-foreground">
                         Version {state.index + 1} of {versionCount}
                       </p>
@@ -433,71 +600,116 @@ export function ReportView({
                           Reset unsaved
                         </Button>
                       </div>
-                    </div>
-
-                    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3 lg:col-span-2">
-                      <p className="text-sm font-medium">AI section assistant</p>
-                      <Textarea
-                        value={state.prompt}
-                        onChange={(e) =>
-                          setSectionState(sec.key, (s) => ({ ...s, prompt: e.target.value }))
-                        }
-                        rows={4}
-                        placeholder="Describe what to change in this section, for example: clarify community involvement and include project duration."
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => generateSuggestion(sec.key, sec.title)}
-                        disabled={!state.prompt.trim() || isBusy}
-                      >
-                        {isBusy ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Generating
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Generate suggestion
-                          </>
-                        )}
-                      </Button>
-
-                      {state.suggestion && (
-                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
-                          <p className="text-xs font-medium text-muted-foreground">AI suggestion preview</p>
-                          <p className="max-h-48 overflow-auto whitespace-pre-wrap text-sm">{state.suggestion}</p>
-                          <Button size="sm" variant="secondary" onClick={() => applySuggestion(sec.key)}>
-                            Apply suggestion
-                          </Button>
-                        </div>
-                      )}
-
-                      {state.references.length > 0 && (
-                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
-                          <p className="text-xs font-medium text-muted-foreground">Source references</p>
-                          <div className="max-h-56 space-y-2 overflow-auto">
-                            {state.references.map((ref) => (
-                              <div key={`${ref.source}-${ref.rank}`} className="rounded border border-border p-2">
-                                <p className="text-xs font-medium">
-                                  {ref.source}
-                                  {typeof ref.chunk_index !== "undefined" ? ` (chunk ${ref.chunk_index})` : ""}
-                                </p>
-                                <p className="mt-1 text-xs text-muted-foreground">{ref.snippet}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   {sectionError && activeKey === sec.key && (
                     <p className="text-sm text-destructive">{sectionError}</p>
                   )}
 
+                  {lowConfidencePrompts.length > 0 && (
+                    <div className="rounded-lg border border-violet-500/30 bg-violet-950/10 p-3">
+                      <p className="text-sm font-medium text-violet-200">
+                        Low-confidence answers to review ({lowConfidencePrompts.length})
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {lowConfidencePrompts.map((item) => (
+                          <div key={`${sec.key}-${item.promptId}-low-confidence`} className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{item.promptId}: </span>
+                            {item.promptText}
+                            {item.reviewNote && (
+                              <p className="mt-1 text-xs text-violet-200">{item.reviewNote}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {actionablePromptItems.length > 0 && (
+                    <details className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3 dark:bg-amber-950/20">
+                      <summary className="cursor-pointer select-none text-sm font-medium">
+                        Review / missing info editor ({actionablePromptItems.length})
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <p className="text-xs text-muted-foreground">
+                          Add corrections for uncertain answers or fill missing facts, then generate a targeted update.
+                        </p>
+                        <div className="space-y-3">
+                          {visibleMissingPrompts.map((item) => (
+                            <label key={`${sec.key}-${item.promptId}`} className="block space-y-1">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                {item.promptId}: {item.promptText}
+                              </span>
+                              {item.status === "needs_review" && (
+                                <span className="block text-xs text-violet-300">
+                                  {item.reviewNote || "Please confirm before submission."}
+                                </span>
+                              )}
+                              <Textarea
+                                value={state.missingInputValues[item.promptId] || ""}
+                                onChange={(event) =>
+                                  setSectionState(sec.key, (s) => ({
+                                    ...s,
+                                    missingInputValues: {
+                                      ...s.missingInputValues,
+                                      [item.promptId]: event.target.value,
+                                    },
+                                  }))
+                                }
+                                rows={3}
+                                placeholder="Add the answer or facts to include."
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {actionablePromptItems.length > 4 && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setSectionState(sec.key, (s) => ({ ...s, showAllMissing: !s.showAllMissing }))
+                              }
+                            >
+                              {state.showAllMissing ? "Show fewer prompts" : `Show ${actionablePromptItems.length - 4} more`}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => generateMissingInfoSuggestion(sec.key, sec.title)}
+                            disabled={isBusy}
+                          >
+                            {isBusy ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Generating
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-2 h-4 w-4" />
+                                Fill missing info
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </details>
+                  )}
+
                   {(sectionWarnings.length > 0 || sectionGaps.length > 0) && (
                     <div className="grid gap-4 lg:grid-cols-2">
+                      {priorityWarnings.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3 dark:bg-amber-950/20 lg:col-span-2">
+                          <p className="text-sm font-medium">Priority warnings</p>
+                          <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                            {priorityWarnings.map((warning, index) => (
+                              <li key={`${sec.key}-${warning.type}-${index}`}>{warning.message}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       <div className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3 dark:bg-amber-950/20">
                         <p className="text-sm font-medium">Section compliance gaps</p>
                         {sectionGaps.length > 0 ? (
@@ -757,4 +969,136 @@ function dedupeWarnings(warnings: ComplianceWarning[]) {
     seen.add(key);
     return true;
   });
+}
+
+const PRIORITY_WARNING_TYPES = new Set([
+  "empty_section",
+  "whitespace_only_section",
+  "incomplete_section",
+  "word_limit_exceeded",
+  "below_expected_word_limit",
+]);
+
+function extractPromptReviewItems(
+  sectionBody: string,
+  promptCoverage: PromptCoverageSection | undefined,
+  expectedPromptItems: NonNullable<Requirements["sections"][number]["prompt_items"]> = []
+) {
+  if (promptCoverage?.prompts?.length) {
+    return promptCoverage.prompts
+      .filter((item) => (item.status || (item.answered ? "answered" : "missing")) !== "answered")
+      .map((item) => ({
+        promptId: item.prompt_id,
+        promptText: item.prompt_text,
+        status: item.status || (item.answered ? "answered" : "missing"),
+        confidence: item.confidence,
+        reviewNote: item.review_note,
+      }));
+  }
+
+  const lines = (sectionBody || "").split(/\r?\n/);
+  const missing: Array<{
+    promptId: string;
+    promptText: string;
+    status: "missing" | "needs_review";
+    confidence?: "high" | "medium" | "low";
+    reviewNote?: string;
+  }> = [];
+  const explicitMissingIds = new Set<string>();
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]?.trim() || "";
+    const promptMatch = line.match(/^((?:Q[\w.-]+)|(?:prompt_\d+)|(?:\d[\w.-]*)):\s*(.+)$/i);
+    if (!promptMatch) continue;
+
+    const promptId = promptMatch[1];
+    const promptText = promptMatch[2].trim();
+    const answerLines: string[] = [];
+
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const nextLine = (lines[j] || "").trim();
+      if (/^((?:Q[\w.-]+)|(?:prompt_\d+)|(?:\d[\w.-]*)):\s*/i.test(nextLine)) break;
+      if (!nextLine) continue;
+      answerLines.push(nextLine);
+    }
+
+    const answerText = answerLines.join(" ").trim();
+    if (!answerText || answerText.includes("[No answer generated]") || answerText.includes("[Missing information needed]")) {
+      explicitMissingIds.add(promptId);
+      missing.push({ promptId, promptText, status: "missing", confidence: "low" });
+    } else if (/^Confidence:\s*(medium|low)\b/im.test(answerText) || /^Needs review:/im.test(answerText)) {
+      const confidenceMatch = answerText.match(/^Confidence:\s*(high|medium|low)\b/im);
+      const reviewMatch = answerText.match(/^Needs review:\s*(.+)$/im);
+      missing.push({
+        promptId,
+        promptText,
+        status: "needs_review",
+        confidence: (confidenceMatch?.[1] as "high" | "medium" | "low" | undefined) || "medium",
+        reviewNote: reviewMatch?.[1],
+      });
+    }
+  }
+
+  const bodyLower = (sectionBody || "").toLowerCase();
+  const hasExplicitPromptFormatting = /(^|\n)\s*((?:Q[\w.-]+)|(?:prompt_\d+)|(?:\d[\w.-]*)):\s*/i.test(sectionBody || "");
+  const seen = new Set(missing.map((item) => item.promptId));
+
+  for (const item of expectedPromptItems) {
+    const promptId = String(item.prompt_id || "").trim();
+    const promptText = String(item.prompt_text || "").trim();
+    if (!promptId || !promptText || seen.has(promptId) || explicitMissingIds.has(promptId)) {
+      continue;
+    }
+
+    const promptMentioned = bodyLower.includes(promptId.toLowerCase()) || fuzzyIncludes(bodyLower, promptText);
+    if (hasExplicitPromptFormatting) {
+      if (!promptMentioned) {
+        missing.push({ promptId, promptText, status: "missing", confidence: "low" });
+        seen.add(promptId);
+      }
+      continue;
+    }
+
+    if (isLikelyStructuredPrompt(item) || !promptMentioned) {
+      missing.push({ promptId, promptText, status: "missing", confidence: "low" });
+      seen.add(promptId);
+    }
+  }
+
+  return missing;
+}
+
+function stripPromptMetadataLines(text: string) {
+  return (text || "")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(Confidence|Needs review):\s*/i.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isLikelyStructuredPrompt(item: {
+  prompt_id?: string;
+  prompt_text: string;
+  prompt_type?: string;
+  answer_type?: string;
+}) {
+  const promptType = String(item.prompt_type || item.answer_type || "").toLowerCase();
+  const promptText = String(item.prompt_text || "").toLowerCase();
+  return (
+    ["field", "selection", "multi_selection", "yes_no", "yes_no_explanation", "short_field"].includes(promptType) ||
+    /\b(select|choose|website|email|url|budget|employees|country|organization|founded|name)\b/.test(promptText)
+  );
+}
+
+function fuzzyIncludes(bodyLower: string, promptText: string) {
+  const snippet = promptText
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 4)
+    .slice(0, 6)
+    .join(" ");
+  if (!snippet) return false;
+  return bodyLower.includes(snippet);
 }

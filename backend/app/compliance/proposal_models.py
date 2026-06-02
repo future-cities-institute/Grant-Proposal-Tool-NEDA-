@@ -98,6 +98,8 @@ class ProposalSectionRewriteRequest(BaseModel):
     proposal_id: str
     section_key: str
     instruction: str
+    rewrite_scope: Literal["paragraph", "section"] = "section"
+    target_text: Optional[str] = None
     metric_id: Optional[str] = None
     issue_id: Optional[str] = None
     issue_message: Optional[str] = None
@@ -113,6 +115,8 @@ class ProposalSectionRewriteResponse(BaseModel):
     proposal_id: str
     section_key: str
     rewritten_text: str
+    rewrite_scope: Literal["paragraph", "section"] = "section"
+    source_text: Optional[str] = None
     rationale: str
     references: List[Dict[str, str | int | float | None]] = Field(default_factory=list)
 

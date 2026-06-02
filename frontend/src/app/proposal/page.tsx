@@ -26,7 +26,11 @@ import {
   type Draft,
   type DraftSection,
   type ComplianceSummary,
+  type PromptCoverageSection,
   exportDraftPdf,
+  createSavedProposal,
+  updateSavedProposal,
+  markSavedProposalExported,
 } from "@/lib/api";
 import { CommunityForm } from "@/components/CommunityForm";
 import { ProposalSections } from "@/components/ProposalSections";
@@ -49,9 +53,11 @@ export default function ProposalPage() {
   const [profile, setProfile] = useState<CommunityProfile | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [enhanced, setEnhanced] = useState<Record<string, string> | null>(null);
+  const [promptCoverage, setPromptCoverage] = useState<Record<string, PromptCoverageSection>>({});
   const [validation, setValidation] = useState<ComplianceSummary | null>(null);
   const [finalSections, setFinalSections] = useState<DraftSection[]>([]);
   const [exportError, setExportError] = useState<string>("");
+  const [proposalId, setProposalId] = useState<string | null>(null);
 
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -81,6 +87,9 @@ export default function ProposalPage() {
       a.remove();
       window.URL.revokeObjectURL(url);
       setExportError("");
+      if (proposalId) {
+        void markSavedProposalExported(proposalId);
+      }
     },
     onError: (err) => {
       setExportError(err instanceof Error ? err.message : "Export failed.");
@@ -92,6 +101,20 @@ export default function ProposalPage() {
     onSuccess: (data) => {
       setRequirements(data.requirements);
       setStep(2);
+      void (async () => {
+        try {
+          const saved = await createSavedProposal({
+            title: data.requirements.grant_name || grantFile?.name || "Untitled Proposal",
+            grant_name: data.requirements.grant_name || "",
+            status: "grant_parsed",
+            current_step: 2,
+            requirements: data.requirements,
+          });
+          setProposalId(saved.id);
+        } catch (error) {
+          console.warn("Could not save proposal after grant parsing.", error);
+        }
+      })();
     },
   });
 
@@ -106,15 +129,31 @@ export default function ProposalPage() {
       budget: number;
     }) => {
       const d = await generateDraft(p, r, budget);
-      const { enhanced: enh } = await enhanceDraft(d, r, p);
+      const { enhanced: enh, prompt_coverage } = await enhanceDraft(d, r, p);
       const val = await evaluateDraftCompliance(d.sections || []);
-      return { draft: d, enhanced: enh, validation: val };
+      return { draft: d, enhanced: enh, promptCoverage: prompt_coverage || {}, validation: val, profile: p, requirements: r };
     },
     onSuccess: (data) => {
       setDraft(data.draft);
       setEnhanced(data.enhanced);
+      setPromptCoverage(data.promptCoverage);
       setValidation(data.validation);
       setStep(4);
+      if (proposalId) {
+        void updateSavedProposal(proposalId, {
+          title: data.requirements.grant_name || data.profile.project_title || "Untitled Proposal",
+          community_name: data.profile.community_name || "",
+          grant_name: data.requirements.grant_name || "",
+          status: "generated_draft",
+          current_step: 4,
+          requirements: data.requirements,
+          profile: data.profile,
+          draft: data.draft,
+          enhanced: data.enhanced,
+          prompt_coverage: data.promptCoverage,
+          validation: data.validation,
+        });
+      }
     },
   });
 
@@ -145,6 +184,14 @@ export default function ProposalPage() {
     (formProfile: CommunityProfile & { requested_budget: number }) => {
       if (!requirements) return;
       setProfile(formProfile);
+      if (proposalId) {
+        void updateSavedProposal(proposalId, {
+          profile: formProfile,
+          community_name: formProfile.community_name || "",
+          status: "intake_completed",
+          current_step: 3,
+        });
+      }
       generateMutation.mutate({
         profile: { ...formProfile, requested_budget: formProfile.requested_budget },
         requirements,
@@ -210,9 +257,9 @@ export default function ProposalPage() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="container mx-auto flex h-14 items-center gap-4 px-4">
-          <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+          <Link href="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
-            Home
+            Dashboard
           </Link>
           <div className="flex-1">
             <h1 className="font-semibold text-foreground">Grant Proposal Builder</h1>
@@ -390,12 +437,20 @@ export default function ProposalPage() {
               <ReportView
                 draft={draft}
                 enhanced={enhanced || {}}
+                promptCoverage={promptCoverage}
                 validation={validation}
                 requirements={requirements}
                 profile={profile}
                 onContinueToExport={(sections) => {
                   setFinalSections(sections);
                   setStep(5);
+                  if (proposalId) {
+                    void updateSavedProposal(proposalId, {
+                      final_sections: sections,
+                      status: "ready_to_export",
+                      current_step: 5,
+                    });
+                  }
                 }}
               />
             </motion.div>

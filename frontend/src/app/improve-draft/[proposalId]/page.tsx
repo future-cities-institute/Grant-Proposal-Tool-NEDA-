@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProposalAnalysis, ProposalAnalysisSection } from "@/lib/api";
+import type { ProposalAnalysis, ProposalAnalysisSection, ProposalMetricIssue } from "@/lib/api";
 import { exportDraftDocx, exportDraftPdf, getProposalAnalysis, reanalyzeProposal, rewriteProposalSection } from "@/lib/api";
 
 const categoryStyles: Record<string, string> = {
@@ -87,20 +87,37 @@ function sanitizeSnippet(snippet?: string | null) {
   return snippet.replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
+function findSentenceBounds(text: string, start: number, end: number) {
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const sentenceStart = Math.max(before.lastIndexOf("."), before.lastIndexOf("?"), before.lastIndexOf("!"));
+  const afterStops = [after.indexOf("."), after.indexOf("?"), after.indexOf("!")].filter((value) => value >= 0);
+  const sentenceEndOffset = afterStops.length ? Math.min(...afterStops) + 1 : after.length;
+  return {
+    start: sentenceStart >= 0 ? sentenceStart + 1 : 0,
+    end: end + sentenceEndOffset,
+  };
+}
+
 function highlightText(text: string, snippets: string[]) {
   let nodes: ReactNode[] = [text];
   let matched = false;
 
   for (const snippet of snippets) {
     if (!snippet || snippet.length < 18) continue;
-    nodes = nodes.flatMap((node, index) => {
+    nodes = nodes.flatMap((node, index): ReactNode[] => {
       if (typeof node !== "string") return [node];
       const foundAt = node.toLowerCase().indexOf(snippet.toLowerCase());
       if (foundAt === -1) return [node];
       matched = true;
-      const before = node.slice(0, foundAt);
-      const match = node.slice(foundAt, foundAt + snippet.length);
-      const after = node.slice(foundAt + snippet.length);
+      const rawEnd = foundAt + snippet.length;
+      const sentenceBounds = findSentenceBounds(node, foundAt, rawEnd);
+      const shouldExpandToSentence = snippet.length >= 32 && sentenceBounds.end - sentenceBounds.start <= 320;
+      const highlightStart = shouldExpandToSentence ? sentenceBounds.start : foundAt;
+      const highlightEnd = shouldExpandToSentence ? sentenceBounds.end : rawEnd;
+      const before = node.slice(0, highlightStart);
+      const match = node.slice(highlightStart, highlightEnd).trim();
+      const after = node.slice(highlightEnd);
       return [
         before,
         <mark
@@ -123,6 +140,74 @@ function paragraphMatchesAnchor(paragraph: string, anchor: string) {
   return normalizedParagraph.includes(normalizedAnchor) || normalizedAnchor.includes(normalizedParagraph.slice(0, 120));
 }
 
+function splitSectionParagraphs(body: string) {
+  return body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+}
+
+function normalizedComparisonText(text: string) {
+  return text.replace(/\s+/g, " ").replace(/[^\w\s]/g, "").trim().toLowerCase();
+}
+
+function tokenizeEvidenceText(text: string) {
+  return normalizedComparisonText(text)
+    .split(/\s+/)
+    .filter((token) => token.length > 3);
+}
+
+function scoreParagraphMatch(paragraph: string, evidence: string) {
+  const normalizedParagraph = normalizedComparisonText(paragraph);
+  const normalizedEvidence = normalizedComparisonText(evidence);
+  if (!normalizedParagraph || !normalizedEvidence) return 0;
+  if (normalizedParagraph.includes(normalizedEvidence)) return 1;
+  if (normalizedEvidence.includes(normalizedParagraph.slice(0, 120))) return 0.92;
+
+  const tokens = tokenizeEvidenceText(evidence);
+  if (!tokens.length) return 0;
+  const matches = tokens.filter((token) => normalizedParagraph.includes(token)).length;
+  return matches / tokens.length;
+}
+
+function resolveIssueEvidenceParagraph(sectionBody: string, issue?: ProposalMetricIssue | null) {
+  if (!issue) return null;
+  const evidenceCandidates = [issue.anchor_text, issue.excerpt, issue.anchor_hint]
+    .map((value) => value?.replace(/\s+/g, " ").trim())
+    .filter((value): value is string => Boolean(value && value.length >= 18));
+  if (!evidenceCandidates.length) return null;
+
+  let best: { paragraph: string; score: number } | null = null;
+  for (const paragraph of splitSectionParagraphs(sectionBody)) {
+    const score = Math.max(...evidenceCandidates.map((candidate) => scoreParagraphMatch(paragraph, candidate)));
+    if (!best || score > best.score) {
+      best = { paragraph, score };
+    }
+  }
+  return best && best.score >= 0.42 ? best.paragraph : null;
+}
+
+function replaceParagraphInBody(body: string, sourceParagraph: string, replacement: string) {
+  const normalizedSource = normalizedComparisonText(sourceParagraph);
+  const parts = body.split(/(\n{2,})/);
+  let replaced = false;
+  const nextParts = parts.map((part) => {
+    if (replaced || /^\n+$/.test(part)) return part;
+    if (normalizedComparisonText(part) === normalizedSource || scoreParagraphMatch(part, sourceParagraph) >= 0.92) {
+      replaced = true;
+      return replacement.trim();
+    }
+    return part;
+  });
+  return replaced ? nextParts.join("") : `${body.trim()}\n\n${replacement.trim()}`;
+}
+
+function buildTargetedRewritePrompt(metricLabel?: string, issue?: ProposalMetricIssue | null) {
+  const direction = issue?.recommendation || issue?.message || `Strengthen ${metricLabel || "the flagged issue"}.`;
+  return `Rewrite only the linked paragraph to address this finding while preserving the surrounding section structure: ${direction}`;
+}
+
+function formatSectionBodyForPreview(body: string) {
+  return body.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 type EditorReviewState =
   | "idle"
   | "draft_updated"
@@ -139,6 +224,17 @@ type EditorReviewSnapshot = {
   issuesCount: number;
 };
 
+type SectionUndoEntry = {
+  sectionKey: string;
+  previousBody: string;
+};
+
+type RewritePreviewState = {
+  text: string;
+  scope: "paragraph" | "section";
+  sourceText?: string | null;
+};
+
 export default function ImproveDraftPage({ params }: { params: { proposalId: string } }) {
   const proposalId = params.proposalId;
   const queryClient = useQueryClient();
@@ -149,7 +245,8 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [editorText, setEditorText] = useState("");
   const [editorPrompt, setEditorPrompt] = useState("");
-  const [rewritePreview, setRewritePreview] = useState("");
+  const [rewritePreview, setRewritePreview] = useState<RewritePreviewState | null>(null);
+  const [sectionUndoStack, setSectionUndoStack] = useState<SectionUndoEntry[]>([]);
   const [editorReviewState, setEditorReviewState] = useState<EditorReviewState>("idle");
   const [editorReviewSnapshot, setEditorReviewSnapshot] = useState<EditorReviewSnapshot | null>(null);
 
@@ -162,7 +259,7 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
 
   useEffect(() => {
     if (!analysis) return;
-    setSections(analysis.sections);
+    setSections(analysis.sections.map((section) => ({ ...section, body: formatSectionBodyForPreview(section.body) })));
     const firstFlaggedMetric =
       analysis.categories.flatMap((category) => category.metrics).find((metric) => metric.issues_count > 0) ||
       analysis.categories[0]?.metrics[0];
@@ -236,7 +333,7 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
       reanalyzeProposal({ proposal_id: proposalId, sections: nextSections }),
     onSuccess: (result) => {
       queryClient.setQueryData(["proposal-analysis", proposalId], result);
-      setSections(result.sections);
+      setSections(result.sections.map((section) => ({ ...section, body: formatSectionBodyForPreview(section.body) })));
       if (editorReviewSnapshot) {
         const updatedMetric = result.categories
           .flatMap((category) => category.metrics)
@@ -268,24 +365,6 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
     },
   });
 
-  const rewriteMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedSection) throw new Error("Select a section first.");
-      return rewriteProposalSection({
-        proposal_id: proposalId,
-        section_key: selectedSection.key,
-        metric_id: selectedMetric?.id,
-        issue_id: selectedActionableIssue?.issue_id,
-        issue_message: selectedActionableIssue?.message,
-        issue_recommendation: selectedActionableIssue?.recommendation,
-        instruction: editorPrompt.trim() || `Revise this section to address ${selectedMetric?.label || "the flagged issues"}.`,
-      });
-    },
-    onSuccess: (result) => {
-      setRewritePreview(result.rewritten_text);
-    },
-  });
-
   const metricCount =
     analysis?.categories.reduce((total, category) => total + category.metrics.length, 0) || 0;
   const selectedActionableIssue = useMemo(
@@ -305,10 +384,44 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
       : selectedActionableIssue?.anchor_type === "paragraph"
         ? "Highlighted paragraph"
         : "Linked section";
+  const selectedIssueEvidenceParagraph = useMemo(
+    () =>
+      selectedSection && selectedActionableIssue
+        ? resolveIssueEvidenceParagraph(selectedSection.body, selectedActionableIssue)
+        : null,
+    [selectedActionableIssue, selectedSection]
+  );
+
+  const rewriteMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedSection) throw new Error("Select a section first.");
+      const hasParagraphTarget = Boolean(selectedIssueEvidenceParagraph);
+      return rewriteProposalSection({
+        proposal_id: proposalId,
+        section_key: selectedSection.key,
+        metric_id: selectedMetric?.id,
+        issue_id: selectedActionableIssue?.issue_id,
+        issue_message: selectedActionableIssue?.message,
+        issue_recommendation: selectedActionableIssue?.recommendation,
+        rewrite_scope: hasParagraphTarget ? "paragraph" : "section",
+        target_text: selectedIssueEvidenceParagraph,
+        instruction:
+          editorPrompt.trim() ||
+          buildTargetedRewritePrompt(selectedMetric?.label, selectedActionableIssue),
+      });
+    },
+    onSuccess: (result) => {
+      setRewritePreview({
+        text: result.rewritten_text,
+        scope: result.rewrite_scope || "section",
+        sourceText: result.source_text,
+      });
+    },
+  });
 
   useEffect(() => {
     setEditorText(selectedSection?.body || "");
-    setRewritePreview("");
+    setRewritePreview(null);
     setEditorPrompt(
       selectedActionableIssue?.recommendation ||
         (selectedMetric ? `Strengthen this section for ${selectedMetric.label.toLowerCase()}.` : "")
@@ -353,13 +466,34 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
     window.URL.revokeObjectURL(url);
   };
 
-  const updateSectionBody = (sectionKey: string, nextBody: string) => {
+  const updateSectionBody = (sectionKey: string, nextBody: string, options: { trackUndo?: boolean } = {}) => {
+    const previousBody = sections.find((section) => section.key === sectionKey)?.body || "";
+    if (options.trackUndo !== false && previousBody !== nextBody) {
+      setSectionUndoStack((current) => [...current.slice(-9), { sectionKey, previousBody }]);
+    }
     setSections((current) =>
       current.map((section) =>
         section.key === sectionKey ? { ...section, body: nextBody } : section
       )
     );
     setEditorReviewState("draft_updated");
+  };
+
+  const undoLastSectionChange = () => {
+    setSectionUndoStack((current) => {
+      const last = current[current.length - 1];
+      if (!last) return current;
+      setSections((sectionsNow) =>
+        sectionsNow.map((section) =>
+          section.key === last.sectionKey ? { ...section, body: last.previousBody } : section
+        )
+      );
+      if (last.sectionKey === selectedSectionKey) {
+        setEditorText(last.previousBody);
+      }
+      setEditorReviewState("draft_updated");
+      return current.slice(0, -1);
+    });
   };
 
   const rerunAnalysis = (nextSections: ProposalAnalysisSection[] = sections) => {
@@ -402,9 +536,14 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
 
   const applyRewritePreview = () => {
     if (!rewritePreview || !selectedSectionKey) return;
-    setEditorText(rewritePreview);
-    updateSectionBody(selectedSectionKey, rewritePreview);
-    setRewritePreview("");
+    const currentBody = sections.find((section) => section.key === selectedSectionKey)?.body || "";
+    const nextBody =
+      rewritePreview.scope === "paragraph" && rewritePreview.sourceText
+        ? replaceParagraphInBody(currentBody, rewritePreview.sourceText, rewritePreview.text)
+        : rewritePreview.text;
+    setEditorText(nextBody);
+    updateSectionBody(selectedSectionKey, nextBody);
+    setRewritePreview(null);
   };
 
   if (analysisQuery.isLoading) {
@@ -1043,6 +1182,15 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
                       </Button>
                       <Button
                         size="sm"
+                        variant="outline"
+                        onClick={undoLastSectionChange}
+                        disabled={!sectionUndoStack.length}
+                      >
+                        <RefreshCcw className="mr-2 h-4 w-4" />
+                        Undo last edit
+                      </Button>
+                      <Button
+                        size="sm"
                         onClick={() => rerunAnalysis()}
                         disabled={reanalyzeMutation.isPending}
                         className="bg-emerald-600 text-white hover:bg-emerald-500"
@@ -1084,17 +1232,22 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
 
                     {rewritePreview ? (
                       <div className="rounded-2xl border border-primary/25 bg-primary/10 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                          Suggested rewrite preview
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                            Suggested rewrite preview
+                          </p>
+                          <span className="rounded-full border border-primary/30 bg-background/40 px-2.5 py-1 text-xs text-primary">
+                            {rewritePreview.scope === "paragraph" ? "Paragraph update" : "Full section update"}
+                          </span>
+                        </div>
                         <p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">
-                          {rewritePreview}
+                          {rewritePreview.text}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button size="sm" onClick={applyRewritePreview}>
                             Apply suggestion to draft
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => setRewritePreview("")}>
+                          <Button size="sm" variant="outline" onClick={() => setRewritePreview(null)}>
                             Discard
                           </Button>
                         </div>

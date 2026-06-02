@@ -1,10 +1,43 @@
 ﻿import { API_BASE } from "./utils";
+import { supabase } from "./supabase";
 
 const RAG_USE_CASE = process.env.NEXT_PUBLIC_RAG_USE_CASE || "default";
 
+async function authHeaders(): Promise<Record<string, string>> {
+  if (typeof window === "undefined") return {};
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export type Requirements = {
   grant_name: string;
-  sections: { key: string; title: string; guidance: string; word_limit?: number }[];
+  sections: {
+    key: string;
+    title: string;
+    guidance: string;
+    word_limit?: number;
+    prompt_items?: Array<{
+      prompt_id?: string;
+      label?: string;
+      prompt_text: string;
+      detail_text?: string;
+      prompt_type?: string;
+      response_style?: string;
+      answer_type?: string;
+      word_limit?: number;
+      required?: boolean;
+      sub_prompt?: boolean;
+      options?: string[];
+      conditional_on_previous?: string | null;
+      parent_prompt_id?: string | null;
+      response_value?: string | null;
+      source_confidence?: string | null;
+      source_origin?: string | null;
+    }>;
+    section_purpose?: string;
+    parser_diagnostics?: string[];
+  }[];
   eligibility?: string[];
   raw_text?: string;
   must_include?: string[];
@@ -18,11 +51,21 @@ export type Requirements = {
     final_section_count?: number;
     llm_fallback_used?: boolean;
     llm_error?: string | null;
+    document_ai_used?: boolean;
+    document_ai_error?: string | null;
+    document_ai_page_count?: number | null;
+    document_ai_form_field_count?: number | null;
+    document_ai_table_count?: number | null;
+    document_ai_used_augmented_text?: boolean | null;
+    document_ai_location?: string | null;
     fallback_reasons?: string[];
     diagnostics?: string[];
     used_default_template?: boolean;
     heuristic_titles_preview?: string[];
     section_titles_preview?: string[];
+    question_count?: number;
+    structured_prompt_count?: number;
+    sections_with_prompt_quality_warnings?: number;
   };
   [k: string]: unknown;
 };
@@ -31,11 +74,81 @@ export type CommunityProfile = {
   community_name: string;
   region: string;
   local_priority: string;
+  legal_name?: string;
+  operating_name?: string;
+  applicant_profile?: string;
+  registration_number?: string;
+  year_established?: string;
+  contact_name?: string;
+  contact_title?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  mailing_address?: string;
+  website?: string;
+  indigenous_communities?: string;
+  population_served?: string;
+  demographic_context?: string;
+  existing_services?: string;
+  service_gaps?: string;
+  remoteness_context?: string;
+  governance_context?: string;
+  project_title?: string;
+  project_location?: string;
   timeline?: string;
   challenges?: string;
   strengths?: string;
   partners?: string;
+  applicant_type?: string;
+  project_type?: string;
+  project_stage?: string;
+  community_support_status?: string;
+  other_funding_status?: string;
+  project_summary?: string;
+  project_objectives?: string;
+  target_beneficiaries?: string;
+  direct_beneficiaries?: string;
+  indirect_beneficiaries?: string;
+  project_activities?: string;
+  expected_outputs?: string;
+  staffing_plan?: string;
+  project_management_approach?: string;
+  expected_outcomes?: string;
+  quantitative_indicators?: string;
+  qualitative_indicators?: string;
+  baseline_conditions?: string;
+  baseline_data_collection?: string;
+  success_measurement?: string;
+  community_engagement?: string;
+  approvals_status?: string;
+  elders_involvement?: string;
+  knowledge_keepers_involvement?: string;
+  youth_involvement?: string;
+  data_governance?: string;
+  cultural_safety?: string;
   evidence_note?: string;
+  why_now?: string;
+  total_project_cost?: number;
+  budget_personnel?: string;
+  budget_professional_services?: string;
+  budget_equipment_materials?: string;
+  budget_travel_logistics?: string;
+  budget_training?: string;
+  budget_evaluation?: string;
+  budget_admin?: string;
+  budget_contingency?: string;
+  budget_breakdown?: string;
+  budget_assumptions?: string;
+  other_funding?: string;
+  risks_and_mitigation?: string;
+  risk_likelihood?: string;
+  risk_impact?: string;
+  mitigation_plan?: string;
+  sustainability_plan?: string;
+  maintenance_requirements?: string;
+  ownership_model?: string;
+  future_funding_sources?: string;
+  scaling_plan?: string;
+  supporting_documents_text?: string;
   requested_budget?: number;
   indicators_before?: Record<string, number>;
   indicators_after?: Record<string, number>;
@@ -47,6 +160,7 @@ export type DraftSection = {
   title: string;
   body: string;
   guidance?: string;
+  prompt_items?: Requirements["sections"][number]["prompt_items"];
 };
 
 export type Draft = {
@@ -57,6 +171,24 @@ export type Draft = {
     grant_name?: string;
   };
   sections: DraftSection[];
+};
+
+export type PromptCoverageSection = {
+  section_key: string;
+  section_title: string;
+  prompts: Array<{
+    prompt_id: string;
+    prompt_text: string;
+    response_style?: string;
+    answered: boolean;
+    status?: "answered" | "needs_review" | "missing";
+    confidence?: "high" | "medium" | "low";
+    review_note?: string;
+    options?: string[];
+    response_value?: string | null;
+    conditional_on_previous?: string | null;
+    parent_prompt_id?: string | null;
+  }>;
 };
 
 export type ValidationResult = {
@@ -202,6 +334,8 @@ export type ProposalRewriteResponse = {
   proposal_id: string;
   section_key: string;
   rewritten_text: string;
+  rewrite_scope?: "paragraph" | "section";
+  source_text?: string | null;
   rationale: string;
   references: RewriteReference[];
 };
@@ -211,6 +345,125 @@ export type ProposalChatResponse = {
   response: string;
   suggested_actions: string[];
 };
+
+export type WorkspaceUser = {
+  id: string;
+  email: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SavedProposal = {
+  id: string;
+  user_id: string;
+  title: string;
+  community_name: string;
+  grant_name: string;
+  status: string;
+  current_step: number;
+  created_at: string;
+  updated_at: string;
+  last_exported_at?: string | null;
+  requirements?: Requirements | null;
+  profile?: CommunityProfile | null;
+  draft?: Draft | null;
+  enhanced?: Record<string, string> | null;
+  prompt_coverage?: Record<string, PromptCoverageSection> | null;
+  validation?: ComplianceSummary | null;
+  final_sections?: DraftSection[] | null;
+};
+
+export type SavedProposalInput = Partial<
+  Pick<
+    SavedProposal,
+    | "title"
+    | "community_name"
+    | "grant_name"
+    | "status"
+    | "current_step"
+    | "requirements"
+    | "profile"
+    | "draft"
+    | "enhanced"
+    | "prompt_coverage"
+    | "validation"
+    | "final_sections"
+    | "last_exported_at"
+  >
+>;
+
+export async function getCurrentUser(): Promise<WorkspaceUser> {
+  const res = await fetch(`${API_BASE}/api/me`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load account");
+  }
+  return res.json();
+}
+
+export async function listSavedProposals(): Promise<SavedProposal[]> {
+  const res = await fetch(`${API_BASE}/api/proposals`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load saved proposals");
+  }
+  const data = await res.json();
+  return data.proposals || [];
+}
+
+export async function createSavedProposal(params: SavedProposalInput): Promise<SavedProposal> {
+  const res = await fetch(`${API_BASE}/api/proposals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to create saved proposal");
+  }
+  return res.json();
+}
+
+export async function getSavedProposal(proposalId: string): Promise<SavedProposal> {
+  const res = await fetch(`${API_BASE}/api/proposals/${proposalId}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load saved proposal");
+  }
+  return res.json();
+}
+
+export async function updateSavedProposal(proposalId: string, params: SavedProposalInput): Promise<SavedProposal> {
+  const res = await fetch(`${API_BASE}/api/proposals/${proposalId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to save proposal");
+  }
+  return res.json();
+}
+
+export async function markSavedProposalExported(proposalId: string): Promise<SavedProposal> {
+  const res = await fetch(`${API_BASE}/api/proposals/${proposalId}/exported`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to update export status");
+  }
+  return res.json();
+}
 
 export async function parseGrant(file: File): Promise<{
   requirements: Requirements;
@@ -225,6 +478,24 @@ export async function parseGrant(file: File): Promise<{
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Failed to parse grant");
+  }
+  return res.json();
+}
+
+export async function parseSupportingDocument(file: File): Promise<{
+  filename: string;
+  raw_text: string;
+  char_count: number;
+}> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/parse-supporting-document`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to parse supporting document");
   }
   return res.json();
 }
@@ -255,7 +526,10 @@ export async function enhanceDraft(
   requirements: Requirements,
   profile: CommunityProfile,
   useCase: string = RAG_USE_CASE
-): Promise<{ enhanced: Record<string, string> }> {
+): Promise<{
+  enhanced: Record<string, string>;
+  prompt_coverage: Record<string, PromptCoverageSection>;
+}> {
   const res = await fetch(`${API_BASE}/api/enhance`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -379,6 +653,8 @@ export async function rewriteProposalSection(params: {
   proposal_id: string;
   section_key: string;
   instruction: string;
+  rewrite_scope?: "paragraph" | "section";
+  target_text?: string | null;
   metric_id?: string;
   issue_id?: string;
   issue_message?: string;

@@ -16,7 +16,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+# Load api/.env if present (local dev)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
+from fastapi import Depends, FastAPI, File, Header, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -36,6 +43,17 @@ from backend.app.compliance.proposal_models import (
     ProposalSectionRewriteRequest,
     ProposalSectionRewriteResponse,
 )
+from backend.app.auth import user_from_authorization_header
+from backend.app.workspace_store import (
+    create_proposal as store_create_proposal,
+    delete_proposal as store_delete_proposal,
+    get_or_create_user,
+    get_proposal as store_get_proposal,
+    init_workspace_store,
+    list_proposals as store_list_proposals,
+    mark_proposal_exported,
+    update_proposal as store_update_proposal,
+)
 
 app = FastAPI(title="Grant Proposal API", version="0.1.0")
 
@@ -48,17 +66,89 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+init_workspace_store()
+
 
 # ---------- Pydantic models for request/response ----------
 class CommunityProfile(BaseModel):
     community_name: str = ""
     region: str = ""
     local_priority: str = ""
+    legal_name: str = ""
+    operating_name: str = ""
+    applicant_profile: str = ""
+    registration_number: str = ""
+    year_established: str = ""
+    contact_name: str = ""
+    contact_title: str = ""
+    contact_email: str = ""
+    contact_phone: str = ""
+    mailing_address: str = ""
+    website: str = ""
+    indigenous_communities: str = ""
+    population_served: str = ""
+    demographic_context: str = ""
+    existing_services: str = ""
+    service_gaps: str = ""
+    remoteness_context: str = ""
+    governance_context: str = ""
+    project_title: str = ""
+    project_location: str = ""
     timeline: str = ""
     challenges: str = ""
     strengths: str = ""
     partners: str = ""
+    applicant_type: str = ""
+    project_type: str = ""
+    project_stage: str = ""
+    community_support_status: str = ""
+    other_funding_status: str = ""
+    project_summary: str = ""
+    project_objectives: str = ""
+    target_beneficiaries: str = ""
+    direct_beneficiaries: str = ""
+    indirect_beneficiaries: str = ""
+    project_activities: str = ""
+    expected_outputs: str = ""
+    staffing_plan: str = ""
+    project_management_approach: str = ""
+    expected_outcomes: str = ""
+    quantitative_indicators: str = ""
+    qualitative_indicators: str = ""
+    baseline_conditions: str = ""
+    baseline_data_collection: str = ""
+    success_measurement: str = ""
+    community_engagement: str = ""
+    approvals_status: str = ""
+    elders_involvement: str = ""
+    knowledge_keepers_involvement: str = ""
+    youth_involvement: str = ""
+    data_governance: str = ""
+    cultural_safety: str = ""
     evidence_note: str = ""
+    why_now: str = ""
+    total_project_cost: Optional[int] = None
+    budget_personnel: str = ""
+    budget_professional_services: str = ""
+    budget_equipment_materials: str = ""
+    budget_travel_logistics: str = ""
+    budget_training: str = ""
+    budget_evaluation: str = ""
+    budget_admin: str = ""
+    budget_contingency: str = ""
+    budget_breakdown: str = ""
+    budget_assumptions: str = ""
+    other_funding: str = ""
+    risks_and_mitigation: str = ""
+    risk_likelihood: str = ""
+    risk_impact: str = ""
+    mitigation_plan: str = ""
+    sustainability_plan: str = ""
+    maintenance_requirements: str = ""
+    ownership_model: str = ""
+    future_funding_sources: str = ""
+    scaling_plan: str = ""
+    supporting_documents_text: str = ""
     requested_budget: Optional[int] = None
     indicators_before: Optional[Dict[str, Any]] = None
     indicators_after: Optional[Dict[str, Any]] = None
@@ -70,6 +160,7 @@ class SectionSpec(BaseModel):
     title: str
     guidance: str = ""
     word_limit: Optional[int] = None
+    prompt_items: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class RequirementsBody(BaseModel):
@@ -131,10 +222,118 @@ class ExportDraftDocxRequest(ExportDraftPdfRequest):
     pass
 
 
+class WorkspaceUser(BaseModel):
+    id: str
+    email: str
+    name: str
+
+
+class ProposalRecordRequest(BaseModel):
+    title: Optional[str] = None
+    community_name: Optional[str] = None
+    grant_name: Optional[str] = None
+    status: Optional[str] = None
+    current_step: Optional[int] = None
+    requirements: Optional[Dict[str, Any]] = None
+    profile: Optional[Dict[str, Any]] = None
+    draft: Optional[Dict[str, Any]] = None
+    enhanced: Optional[Dict[str, Any]] = None
+    prompt_coverage: Optional[Dict[str, Any]] = None
+    validation: Optional[Dict[str, Any]] = None
+    final_sections: Optional[List[Dict[str, Any]]] = None
+    last_exported_at: Optional[str] = None
+
+
+class ProposalRecord(ProposalRecordRequest):
+    id: str
+    user_id: str
+    title: str
+    community_name: str = ""
+    grant_name: str = ""
+    status: str = "draft"
+    current_step: int = 1
+    created_at: str
+    updated_at: str
+
+
+class ProposalListResponse(BaseModel):
+    proposals: List[ProposalRecord]
+
+
+def current_user(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+    try:
+        user_payload = user_from_authorization_header(authorization)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {exc}") from exc
+    return get_or_create_user(
+        user_id=user_payload["id"],
+        email=user_payload.get("email") or "user@example.com",
+        name=user_payload.get("name") or "User",
+    )
+
+
 def _safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_\- ]+", "", (value or "").strip())
     cleaned = re.sub(r"\s+", "_", cleaned)
     return cleaned[:60] or "grant_proposal"
+
+
+_PROMPT_EXPORT_RE = re.compile(r"^\s*((?:Q[\w.-]+)|(?:prompt_\d+)|(?:\d[\w.-]*)):\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def _clean_export_answer(text: str) -> str:
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"(?im)^\s*Confidence:\s*(?:high|medium|low)\s*$", "", cleaned)
+    cleaned = re.sub(r"(?im)^\s*Needs review:\s*.*$", "", cleaned)
+    cleaned = cleaned.replace("[No answer generated]", "Needs additional information.")
+    cleaned = cleaned.replace("[Missing information needed]", "Needs additional information.")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip() or "Needs additional information."
+
+
+def _export_blocks(section_text: str) -> List[Dict[str, str]]:
+    """Convert internal prompt_id blocks into clean export blocks."""
+    lines = (section_text or "").replace("\r\n", "\n").split("\n")
+    blocks: List[Dict[str, str]] = []
+    current_label: Optional[str] = None
+    current_answer: List[str] = []
+    saw_prompt_blocks = False
+
+    def flush() -> None:
+        nonlocal current_label, current_answer
+        if current_label is None:
+            return
+        blocks.append({
+            "label": current_label,
+            "body": _clean_export_answer("\n".join(current_answer)),
+        })
+        current_label = None
+        current_answer = []
+
+    for line in lines:
+        match = _PROMPT_EXPORT_RE.match(line)
+        if match:
+            saw_prompt_blocks = True
+            flush()
+            current_label = match.group(2).strip().rstrip(".")
+            current_answer = []
+            continue
+        if current_label is not None:
+            current_answer.append(line)
+
+    flush()
+
+    if saw_prompt_blocks:
+        return blocks
+
+    paragraphs = [
+        _clean_export_answer(paragraph)
+        for paragraph in re.split(r"\n\s*\n", section_text or "")
+        if paragraph.strip()
+    ]
+    return [{"body": paragraph} for paragraph in paragraphs] or [{"body": "No content provided."}]
 
 
 def _render_pdf(body: ExportDraftPdfRequest) -> bytes:
@@ -206,6 +405,16 @@ def _render_pdf(body: ExportDraftPdfRequest) -> bytes:
                 y -= line_h
             y -= gap
 
+    def draw_subheading(text: str) -> None:
+        nonlocal y
+        y -= 2
+        for ln in wrap_text(text, size=11):
+            ensure_room(1)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(left, y, ln)
+            y -= line_h
+        y -= 1
+
     # Cover header
     draw_line("Grant Proposal", font="Helvetica-Bold", size=22, extra_gap=8)
     if body.grant_name:
@@ -227,7 +436,11 @@ def _render_pdf(body: ExportDraftPdfRequest) -> bytes:
             new_page()
         title = (sec.title or f"Section {i}").strip()
         draw_line(f"{i}. {title}", font="Helvetica-Bold", size=13, extra_gap=3)
-        draw_paragraph((sec.body or "").strip() or "No content provided.", size=11, gap=6.0)
+        for block in _export_blocks(sec.body or ""):
+            label = block.get("label")
+            if label:
+                draw_subheading(label)
+            draw_paragraph(block.get("body", ""), size=11, gap=6.0)
 
     c.save()
     buf.seek(0)
@@ -257,10 +470,13 @@ def _render_docx(body: ExportDraftDocxRequest) -> bytes:
     for i, sec in enumerate(body.sections, start=1):
         title = (sec.title or f"Section {i}").strip()
         document.add_heading(f"{i}. {title}", level=1)
-        for paragraph in (sec.body or "No content provided.").replace("\r\n", "\n").split("\n\n"):
-            cleaned = paragraph.strip()
-            if cleaned:
-                document.add_paragraph(cleaned)
+        for block in _export_blocks(sec.body or ""):
+            label = block.get("label")
+            if label:
+                label_paragraph = document.add_paragraph()
+                label_run = label_paragraph.add_run(label)
+                label_run.bold = True
+            document.add_paragraph(block.get("body", "No content provided."))
 
     buf = BytesIO()
     document.save(buf)
@@ -272,6 +488,55 @@ def _render_docx(body: ExportDraftDocxRequest) -> bytes:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/me", response_model=WorkspaceUser)
+def get_me(user: Dict[str, Any] = Depends(current_user)):
+    return user
+
+
+@app.get("/api/proposals", response_model=ProposalListResponse)
+def list_saved_proposals(user: Dict[str, Any] = Depends(current_user)):
+    return {"proposals": store_list_proposals(user["id"])}
+
+
+@app.post("/api/proposals", response_model=ProposalRecord)
+def create_saved_proposal(body: ProposalRecordRequest, user: Dict[str, Any] = Depends(current_user)):
+    payload = body.model_dump(exclude_unset=True)
+    return store_create_proposal(user["id"], payload)
+
+
+@app.get("/api/proposals/{proposal_id}", response_model=ProposalRecord)
+def get_saved_proposal(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
+    proposal = store_get_proposal(user["id"], proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return proposal
+
+
+@app.patch("/api/proposals/{proposal_id}", response_model=ProposalRecord)
+def update_saved_proposal(proposal_id: str, body: ProposalRecordRequest, user: Dict[str, Any] = Depends(current_user)):
+    payload = body.model_dump(exclude_unset=True)
+    proposal = store_update_proposal(user["id"], proposal_id, payload)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return proposal
+
+
+@app.post("/api/proposals/{proposal_id}/exported", response_model=ProposalRecord)
+def mark_saved_proposal_exported(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
+    proposal = mark_proposal_exported(user["id"], proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return proposal
+
+
+@app.delete("/api/proposals/{proposal_id}")
+def delete_saved_proposal(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
+    deleted = store_delete_proposal(user["id"], proposal_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return {"deleted": True}
 
 
 def get_compliance_service() -> ComplianceEvaluationService:
@@ -338,6 +603,8 @@ def rewrite_proposal_section(body: ProposalSectionRewriteRequest):
             proposal_id=body.proposal_id,
             section_key=body.section_key,
             instruction=body.instruction,
+            rewrite_scope=body.rewrite_scope,
+            target_text=body.target_text,
             metric_id=body.metric_id,
             issue_id=body.issue_id,
             issue_message=body.issue_message,
@@ -395,7 +662,15 @@ async def parse_grant(file: UploadFile = File(...)):
     req_dict = {
         "grant_name": requirements.get("grant_name"),
         "sections": [
-            {"key": s.get("key"), "title": s.get("title"), "guidance": s.get("guidance", ""), "word_limit": s.get("word_limit")}
+            {
+                "key": s.get("key"),
+                "title": s.get("title"),
+                "guidance": s.get("guidance", ""),
+                "word_limit": s.get("word_limit"),
+                "prompt_items": s.get("prompt_items", []),
+                "section_purpose": s.get("section_purpose"),
+                "parser_diagnostics": s.get("parser_diagnostics", []),
+            }
             for s in requirements.get("sections", [])
         ],
         "eligibility": requirements.get("eligibility", []),
@@ -406,6 +681,44 @@ async def parse_grant(file: UploadFile = File(...)):
         "parser_meta": requirements.get("parser_meta", {}),
     }
     return {"requirements": req_dict, "raw_text": raw_text}
+
+
+@app.post("/api/parse-supporting-document")
+async def parse_supporting_document(file: UploadFile = File(...)):
+    """Extract raw text from a supporting context document."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename")
+    name = file.filename.lower()
+    if not name.endswith((".txt", ".md", ".csv", ".json", ".pdf", ".docx")):
+        raise HTTPException(status_code=400, detail="Only .txt, .md, .csv, .json, .pdf, .docx supported")
+    try:
+        content = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read file: {e}")
+
+    class FileLike:
+        def __init__(self, data: bytes, filename: str):
+            self._io = BytesIO(data)
+            self.name = filename
+        def read(self, n=-1):
+            return self._io.read(n)
+        def getvalue(self):
+            return self._io.getvalue()
+        def seek(self, pos=0):
+            return self._io.seek(pos)
+
+    try:
+        from backend.app.parsers.grant_parsers import extract_text_from_upload
+        raw_text = extract_text_from_upload(FileLike(content, file.filename)).strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not raw_text:
+        raise HTTPException(status_code=422, detail="Could not extract text from supporting document")
+    return {
+        "filename": file.filename,
+        "raw_text": raw_text[:20000],
+        "char_count": len(raw_text),
+    }
 
 
 @app.post("/api/generate-draft")
@@ -426,16 +739,16 @@ def generate_draft(body: GenerateDraftRequest):
 def enhance(body: EnhanceRequest):
     """Enhance draft sections using RAG + LLM."""
     try:
-        from backend.app.llm.llm_utils import enhance_sections
+        from backend.app.llm.llm_utils import enhance_sections_with_metadata
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"Backend import error: {e}")
-    enhanced = enhance_sections(
+    result = enhance_sections_with_metadata(
         draft=body.draft,
         requirements=body.requirements,
         profile=body.profile,
         use_case=body.use_case,
     )
-    return {"enhanced": enhanced}
+    return result
 
 
 @app.post("/api/validate")
