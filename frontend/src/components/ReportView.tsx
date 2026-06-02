@@ -413,8 +413,8 @@ export function ReportView({
       <Card
         className={
           missingInfoSections.length > 0 || topQualityIssues.length > 0
-            ? "border-amber-500/40 bg-amber-950/10"
-            : "border-emerald-500/30 bg-emerald-950/10"
+            ? "border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/10"
+            : "border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/10"
         }
       >
         <CardHeader>
@@ -428,7 +428,7 @@ export function ReportView({
           {missingInfoSections.length > 0 ? (
             <div className="space-y-3">
               {missingInfoSections.slice(0, 6).map((section) => (
-                <div key={section.key} className="rounded-lg border border-amber-500/20 bg-card/40 p-3">
+                <div key={section.key} className="rounded-lg border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-card/40">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-2">
                       <p className="font-medium text-foreground">{section.title}</p>
@@ -472,7 +472,7 @@ export function ReportView({
           ) : topQualityIssues.length > 0 ? (
             <div className="space-y-3">
               {topQualityIssues.map((gap) => (
-                <div key={`${gap.section}-${gap.failed_check_id}`} className="rounded-lg border border-amber-500/20 bg-card/40 p-3">
+                <div key={`${gap.section}-${gap.failed_check_id}`} className="rounded-lg border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-card/40">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium text-foreground">
@@ -489,7 +489,7 @@ export function ReportView({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-emerald-300">No priority issues detected yet.</p>
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">No priority issues detected yet.</p>
           )}
         </CardContent>
       </Card>
@@ -538,8 +538,8 @@ export function ReportView({
                       <span
                         className={
                           sectionGaps.length > 0
-                            ? "rounded-full border border-rose-500/40 bg-rose-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-rose-300"
-                            : "rounded-full border border-emerald-500/30 bg-emerald-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-emerald-300"
+                            ? "rounded-full border border-rose-500/40 bg-rose-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"
+                            : "rounded-full border border-emerald-500/30 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300"
                         }
                       >
                         {sectionGaps.length > 0 ? `${sectionGaps.length} gap${sectionGaps.length === 1 ? "" : "s"}` : "no gaps"}
@@ -547,8 +547,8 @@ export function ReportView({
                       <span
                         className={
                           sectionWarnings.length > 0
-                            ? "rounded-full border border-amber-500/40 bg-amber-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-300"
-                            : "rounded-full border border-sky-500/30 bg-sky-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-sky-300"
+                            ? "rounded-full border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-950/20 dark:text-amber-300"
+                            : "rounded-full border border-sky-500/30 bg-sky-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950/20 dark:text-sky-300"
                         }
                       >
                         {sectionWarnings.length > 0
@@ -556,7 +556,7 @@ export function ReportView({
                           : "no warnings"}
                       </span>
                       {missingPrompts.length > 0 && (
-                        <span className="rounded-full border border-amber-500/40 bg-amber-950/20 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-300">
+                        <span className="rounded-full border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-950/20 dark:text-amber-300">
                           {missingPrompts.length} missing
                         </span>
                       )}
@@ -768,18 +768,18 @@ export function ReportView({
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Card
-          className={
-            gaps.length > 0
-              ? "border-rose-500/50 bg-rose-950/10"
-              : "border-emerald-500/30 bg-emerald-950/10"
+        className={
+          gaps.length > 0
+              ? "border-rose-500/50 bg-rose-50/80 dark:bg-rose-950/10"
+              : "border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/10"
           }
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               {gaps.length > 0 ? (
-                <AlertTriangle className="h-4 w-4 text-rose-400" />
+                <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
               ) : (
-                <Check className="h-4 w-4 text-emerald-400" />
+                <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               )}
               Report-wide compliance gaps
             </CardTitle>
@@ -794,8 +794,8 @@ export function ReportView({
             {gaps.length > 0 ? (
               <div className="space-y-4 text-sm text-muted-foreground">
                 {Object.entries(groupedGaps).map(([sectionLabel, sectionGaps]) => (
-                  <div key={sectionLabel} className="rounded-md border border-rose-500/20 bg-rose-950/10 p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-rose-200/80">
+                  <div key={sectionLabel} className="rounded-md border border-rose-500/30 bg-white/70 p-3 dark:border-rose-500/20 dark:bg-rose-950/10">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-rose-700 dark:text-rose-200/80">
                       {sectionLabel}
                     </p>
                     <ul className="space-y-3">
@@ -803,10 +803,10 @@ export function ReportView({
                         <li key={`${gap.section}-${gap.failed_check_id}`}>
                           <p className="font-medium text-foreground">
                             {gap.message}
-                            <span className="ml-2 text-xs uppercase tracking-wide text-rose-300">
+                            <span className="ml-2 text-xs uppercase tracking-wide text-rose-700 dark:text-rose-300">
                               {gap.severity}
                             </span>
-                            <span className="ml-2 text-xs uppercase tracking-wide text-cyan-300">
+                            <span className="ml-2 text-xs uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
                               {gap.confidence_score}% confidence
                             </span>
                           </p>
@@ -815,7 +815,7 @@ export function ReportView({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-rose-500/30 bg-transparent text-rose-200 hover:bg-rose-950/30"
+                              className="border-rose-500/40 bg-white/50 text-rose-700 hover:bg-rose-50 dark:bg-transparent dark:text-rose-200 dark:hover:bg-rose-950/30"
                               onClick={() => jumpToSection(gap.section)}
                             >
                               Open section
@@ -823,7 +823,7 @@ export function ReportView({
                             </Button>
                           </div>
                           <details
-                            className="mt-2 rounded-md border border-rose-500/20 bg-rose-950/10 p-2"
+                            className="mt-2 rounded-md border border-rose-500/30 bg-rose-50/70 p-2 dark:border-rose-500/20 dark:bg-rose-950/10"
                           >
                             <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                               Source: {gap.source_document}
@@ -837,24 +837,24 @@ export function ReportView({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-emerald-300">No major gaps detected.</p>
+              <p className="text-sm text-emerald-700 dark:text-emerald-300">No major gaps detected.</p>
             )}
           </CardContent>
         </Card>
 
         <Card
-          className={
-            warnings.length > 0
-              ? "border-amber-500/50 bg-amber-950/10"
-              : "border-sky-500/30 bg-sky-950/10"
+        className={
+          warnings.length > 0
+              ? "border-amber-500/50 bg-amber-50/80 dark:bg-amber-950/10"
+              : "border-sky-500/30 bg-sky-50/80 dark:bg-sky-950/10"
           }
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               {warnings.length > 0 ? (
-                <AlertTriangle className="h-4 w-4 text-amber-400" />
+                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               ) : (
-                <Check className="h-4 w-4 text-sky-400" />
+                <Check className="h-4 w-4 text-sky-600 dark:text-sky-400" />
               )}
               Report-wide warnings
             </CardTitle>
@@ -869,8 +869,8 @@ export function ReportView({
             {warnings.length > 0 ? (
               <div className="space-y-4 text-sm text-muted-foreground">
                 {Object.entries(groupedWarnings).map(([sectionLabel, sectionWarnings]) => (
-                  <div key={sectionLabel} className="rounded-md border border-amber-500/20 bg-amber-950/10 p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">
+                  <div key={sectionLabel} className="rounded-md border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-amber-950/10">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200/80">
                       {sectionLabel}
                     </p>
                     <ul className="space-y-3">
@@ -884,7 +884,7 @@ export function ReportView({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-amber-500/30 bg-transparent text-amber-200 hover:bg-amber-950/30"
+                              className="border-amber-500/40 bg-white/50 text-amber-700 hover:bg-amber-50 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-950/30"
                               onClick={() => jumpToSection(warning.section)}
                             >
                               Open section
@@ -898,7 +898,7 @@ export function ReportView({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-sky-300">No warnings.</p>
+              <p className="text-sm text-sky-700 dark:text-sky-300">No warnings.</p>
             )}
           </CardContent>
         </Card>

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/Providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { listSavedProposals, type SavedProposal } from "@/lib/api";
@@ -24,6 +25,7 @@ const prepItems = [
 ];
 
 export function DashboardScreen() {
+  const { user } = useAuth();
   const proposalsQuery = useQuery({
     queryKey: ["saved-proposals"],
     queryFn: listSavedProposals,
@@ -31,6 +33,7 @@ export function DashboardScreen() {
   const savedProposals = proposalsQuery.data || [];
   const exportedCount = savedProposals.filter((proposal) => proposal.status === "exported").length;
   const lastActivity = savedProposals[0]?.updated_at ? formatActivityTime(savedProposals[0].updated_at) : "No activity";
+  const displayName = getDisplayName(user);
 
   return (
     <AppShell>
@@ -39,7 +42,7 @@ export function DashboardScreen() {
           <div>
             <p className="text-sm font-medium text-primary">Proposal workspace</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-              Welcome back, Prave
+              Welcome back, {displayName}
             </h1>
             <p className="mt-2 max-w-3xl text-muted-foreground">
               Start a new proposal, resume a saved draft, or review the resources that will support the main generation workflow.
@@ -182,6 +185,16 @@ export function DashboardScreen() {
       </div>
     </AppShell>
   );
+}
+
+function getDisplayName(user: ReturnType<typeof useAuth>["user"]) {
+  const metadata = user?.user_metadata || {};
+  const name =
+    metadata.full_name ||
+    metadata.name ||
+    user?.email?.split("@")[0] ||
+    "there";
+  return String(name).trim() || "there";
 }
 
 function formatStatus(status: string) {

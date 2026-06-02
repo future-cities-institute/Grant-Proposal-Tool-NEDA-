@@ -1,13 +1,50 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Database, KeyRound, Mail, Save, UserRound } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/Providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { supabase } from "@/lib/supabase";
 
 export default function AccountPage() {
+  const { user } = useAuth();
+  const [name, setName] = useState("");
+  const [status, setStatus] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const metadata = user?.user_metadata || {};
+    setName(String(metadata.full_name || metadata.name || user?.email?.split("@")[0] || ""));
+  }, [user]);
+
+  const saveProfile = async () => {
+    const nextName = name.trim();
+    if (!nextName) {
+      setStatus("Enter a name before saving.");
+      return;
+    }
+
+    setIsSaving(true);
+    setStatus("");
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        full_name: nextName,
+        name: nextName,
+      },
+    });
+    if (error) {
+      setStatus(error.message);
+    } else {
+      await supabase.auth.refreshSession();
+      setStatus("Profile saved.");
+    }
+    setIsSaving(false);
+  };
+
   return (
     <AppShell>
       <div className="space-y-8">
@@ -33,21 +70,34 @@ export default function AccountPage() {
                 <Label htmlFor="name">Name</Label>
                 <div className="relative">
                   <UserRound className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input id="name" defaultValue="Prave" className="pl-9" />
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="pl-9"
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="account-email">Email</Label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input id="account-email" defaultValue="prave@example.com" className="pl-9" />
+                  <Input
+                    id="account-email"
+                    value={user?.email || ""}
+                    readOnly
+                    className="pl-9"
+                  />
                 </div>
               </div>
-              <div className="sm:col-span-2">
-                <Button>
+              <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:items-center">
+                <Button onClick={saveProfile} disabled={isSaving}>
                   <Save className="mr-2 h-4 w-4" />
-                  Save profile
+                  {isSaving ? "Saving..." : "Save profile"}
                 </Button>
+                {status && (
+                  <p className="text-sm text-muted-foreground">{status}</p>
+                )}
               </div>
             </CardContent>
           </Card>
