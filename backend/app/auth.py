@@ -79,21 +79,28 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
 
 
 def _verify_supabase_jwks_token(jwt_module: Any, token: str, algorithm: str) -> dict[str, Any]:
+    unverified_payload = _decode_jwt_payload_without_verification(token) or {}
+    issuer = str(unverified_payload.get("iss") or "").strip().rstrip("/")
     supabase_url = (
         os.getenv("SUPABASE_URL")
         or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         or ""
     ).strip().rstrip("/")
+    if supabase_url and not supabase_url.startswith(("http://", "https://")):
+        supabase_url = f"https://{supabase_url}"
     explicit_jwks_url = os.getenv("SUPABASE_JWKS_URL", "").strip()
-    if not explicit_jwks_url and not supabase_url:
-        raise RuntimeError("SUPABASE_URL or SUPABASE_JWKS_URL is required for asymmetric Supabase tokens.")
+    if not explicit_jwks_url and not supabase_url and not issuer:
+        raise RuntimeError("SUPABASE_URL, SUPABASE_JWKS_URL, or a JWT issuer is required for asymmetric Supabase tokens.")
 
-    jwks_urls = [explicit_jwks_url] if explicit_jwks_url else [
-        f"{supabase_url}/auth/v1/.well-known/jwks.json",
-        f"{supabase_url}/auth/v1/jwks",
-    ]
+    jwks_urls = []
+    if explicit_jwks_url:
+        jwks_urls.append(explicit_jwks_url)
+    if issuer:
+        jwks_urls.append(f"{issuer}/.well-known/jwks.json")
+    if supabase_url:
+        jwks_urls.append(f"{supabase_url}/auth/v1/.well-known/jwks.json")
     last_error: Exception | None = None
-    for jwks_url in jwks_urls:
+    for jwks_url in dict.fromkeys(jwks_urls):
         try:
             jwk_client = jwt_module.PyJWKClient(jwks_url)
             signing_key = jwk_client.get_signing_key_from_jwt(token)
