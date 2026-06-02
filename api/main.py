@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import re
+import os
 from io import BytesIO
 from pathlib import Path
 from datetime import date
@@ -57,10 +58,16 @@ from backend.app.workspace_store import (
 
 app = FastAPI(title="Grant Proposal API", version="0.1.0")
 
+cors_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|[a-z0-9-]+\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

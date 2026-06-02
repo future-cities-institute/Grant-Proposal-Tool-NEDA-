@@ -18,5 +18,7 @@ services:
         value: gpt-4o-mini
       - key: EMBED_MODEL
         value: text-embedding-3-small
+      - key: CORS_ORIGINS
+        sync: false   # set to the Vercel frontend URL, e.g. https://your-app.vercel.app
       - key: PYTHONPATH
         value: /app
