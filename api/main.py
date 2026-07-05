@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 import re
 import os
+import logging
 from io import BytesIO
 from pathlib import Path
 from datetime import date
@@ -55,6 +56,8 @@ from backend.app.workspace_store import (
     mark_proposal_exported,
     update_proposal as store_update_proposal,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Grant Proposal API", version="0.1.0")
 
@@ -749,11 +752,33 @@ def enhance(body: EnhanceRequest):
         from backend.app.llm.llm_utils import enhance_sections_with_metadata
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"Backend import error: {e}")
+    section_count = len((body.draft or {}).get("sections", []) or [])
+    prompt_count = sum(
+        len(section.get("prompt_items", []) or [])
+        for section in (body.draft or {}).get("sections", []) or []
+        if isinstance(section, dict)
+    )
+    logger.info(
+        "Enhance request received sections=%s prompt_items=%s grant=%s model=%s openai_key_configured=%s",
+        section_count,
+        prompt_count,
+        (body.requirements or {}).get("grant_name"),
+        os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
+        bool(os.getenv("OPENAI_API_KEY")),
+    )
     result = enhance_sections_with_metadata(
         draft=body.draft,
         requirements=body.requirements,
         profile=body.profile,
         use_case=body.use_case,
+    )
+    meta = result.get("meta", {}) if isinstance(result, dict) else {}
+    logger.info(
+        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s",
+        section_count,
+        meta.get("enhanced_section_count"),
+        meta.get("fallback_used"),
+        meta.get("fallback_reason") or "none",
     )
     return result
 

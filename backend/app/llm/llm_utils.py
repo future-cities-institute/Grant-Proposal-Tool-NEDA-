@@ -169,6 +169,13 @@ def _build_payload(
             Each section should be 2–5 well-developed paragraphs with clear transitions.
             For sections with prompt_items, do not write a single blended section response.
             Instead, produce one distinct answer block per prompt.
+            Each prompt answer should usually be 3-6 substantive sentences when the
+            available profile and grant context support it. For narrative prompts such as
+            need, design, work plan, engagement, outcomes, risk, sustainability, governance,
+            or budget/value, include concrete implementation detail, evidence, roles,
+            timeline, and rationale from the profile instead of one-sentence answers.
+            Short factual prompts such as legal name, contact email, requested amount,
+            dates, or registration number may remain concise.
 
             Use respectful, strengths-based, plain-language writing.
             Avoid academic jargon, corporate buzzwords, or generic claims.
@@ -959,6 +966,15 @@ def enhance_sections_with_metadata(
     use_case: Optional[str] = None,
 ) -> Dict[str, Any]:
     sections = draft.get("sections", []) or []
+    meta: Dict[str, Any] = {
+        "section_count": len(sections),
+        "requested_model": CHAT_MODEL,
+        "openai_api_key_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "openai_sdk_available": _openai_sdk_available(),
+        "fallback_used": False,
+        "fallback_reason": None,
+        "enhanced_section_count": 0,
+    }
     try:
         enhanced = enhance_sections(
             draft=draft,
@@ -971,21 +987,26 @@ def enhance_sections_with_metadata(
             use_case=use_case,
         )
     except Exception as exc:
-        logger.warning(
-            "Section enhancement failed; returning baseline draft with prompt coverage: %s",
-            type(exc).__name__,
+        meta["fallback_used"] = True
+        meta["fallback_reason"] = f"{type(exc).__name__}: {exc}"
+        logger.exception(
+            "Section enhancement failed; returning baseline draft with prompt coverage"
         )
         enhanced = {
             str(section.get("key") or ""): str(section.get("body") or "")
             for section in sections
             if str(section.get("key") or "")
         }
+    if not enhanced:
+        meta["fallback_used"] = True
+        meta["fallback_reason"] = meta["fallback_reason"] or "enhancement_returned_no_sections"
     enhanced = _ensure_prompt_structured_sections(
         sections=sections,
         enhanced=enhanced,
         profile=profile or {},
         requirements=requirements,
     )
+    meta["enhanced_section_count"] = len(enhanced)
     return {
         "enhanced": enhanced,
         "prompt_coverage": _build_prompt_coverage_map(
@@ -993,6 +1014,7 @@ def enhance_sections_with_metadata(
             enhanced=enhanced,
             requirements=requirements,
         ),
+        "meta": meta,
     }
 
 
