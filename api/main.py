@@ -57,7 +57,7 @@ from backend.app.workspace_store import (
     update_proposal as store_update_proposal,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="Grant Proposal API", version="0.1.0")
 
@@ -774,11 +774,13 @@ def enhance(body: EnhanceRequest):
     )
     meta = result.get("meta", {}) if isinstance(result, dict) else {}
     logger.info(
-        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s",
+        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s rag_collection=%s rag_chars=%s",
         section_count,
         meta.get("enhanced_section_count"),
         meta.get("fallback_used"),
         meta.get("fallback_reason") or "none",
+        meta.get("rag_collection") or "none",
+        meta.get("rag_context_chars"),
     )
     return result
 

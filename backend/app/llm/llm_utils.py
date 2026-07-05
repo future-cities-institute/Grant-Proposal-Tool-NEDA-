@@ -450,6 +450,19 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
         ]
         answer = "; ".join(detail for detail in contact_details if detail)
         return answer or "[Missing information needed]"
+    if re.search(r"\b(routing|stream|intake|high-level assessment|high level assessment|assessment)\b", prompt_text):
+        parts = [
+            value
+            for value in [
+                project_type,
+                project_stage,
+                local_priority,
+                project_location,
+                requested_budget and f"Requested funding: ${int(requested_budget):,}.",
+            ]
+            if value
+        ]
+        return " ".join(str(part) for part in parts) if parts else "[Missing information needed]"
     if re.search(r"\b(applicant profile|organization profile|organisation profile|about the applicant|about the organization|about the organisation|mandate|mission|experience|capacity|right lead|qualified)\b", prompt_text):
         parts = [value for value in [applicant_profile, applicant_type, strengths] if value]
         return " ".join(parts) if parts else "[Missing information needed]"
@@ -471,6 +484,12 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
         return indigenous_communities or community_name or "[Missing information needed]"
     if re.search(r"\b(governance|leadership|decision-making|decision making)\b", prompt_text):
         return governance_context or "[Missing information needed]"
+    if re.search(r"\b(who defined|who requested|who shaped|community-defined|community defined)\b", prompt_text):
+        parts = [value for value in [community_engagement, governance_context, community_support_status] if value]
+        return " ".join(parts) if parts else "[Missing information needed]"
+    if re.search(r"\b(how benefits|benefits shared|shared benefit|who will benefit)\b", prompt_text):
+        parts = [value for value in [target_beneficiaries, direct_beneficiaries, expected_outcomes, local_priority] if value]
+        return " ".join(parts) if parts else "[Missing information needed]"
     if re.search(r"\b(duration|timeline|schedule|timeframe|milestone|milestones)\b", prompt_text) and timeline:
         return timeline
     if re.search(r"\b(funding requested|amount requested|requested funding|funding amount|request amount)\b", prompt_text) and requested_budget:
@@ -496,6 +515,12 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
         return maintenance_requirements or sustainability_plan or budget_training or budget_contingency or "[Missing information needed]"
     if re.search(r"\b(community ownership model|ownership model|community ownership)\b", prompt_text):
         return ownership_model or governance_context or data_governance or "[Missing information needed]"
+    if re.search(r"\b(consent|permission|approval to use|authorized use)\b", prompt_text):
+        parts = [value for value in [community_engagement, data_governance, governance_context, cultural_safety] if value]
+        return " ".join(parts) if parts else "[Missing information needed]"
+    if re.search(r"\b(access|storage|sharing|retention|privacy|records?)\b", prompt_text):
+        parts = [value for value in [data_governance, cultural_safety, governance_context] if value]
+        return " ".join(parts) if parts else "[Missing information needed]"
     if (
         re.search(r"\b(project title|^title\b|\btitle\b)", prompt_text)
         and not re.search(r"\b(duration|funding|requested|cost|summary|problem|solution)\b", prompt_text)
@@ -521,6 +546,8 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
         return scaling_plan or "[Missing information needed]"
     if re.search(r"\b(future revenue sources|future revenue|future funding|revenue source|funding source)\b", prompt_text):
         return future_funding_sources or "[Missing information needed]"
+    if re.search(r"\b(other contribution|contributions|in-kind|in kind|leveraged funding)\b", prompt_text):
+        return other_funding or other_funding_status or "[Missing information needed]"
     if re.search(r"\b(anticipated long-term outcomes|long-term outcomes|long term outcomes)\b", prompt_text):
         return expected_outcomes or sustainability_plan or "[Missing information needed]"
     if re.search(r"\b(benefits will continue|continue after funding|after funding ends)\b", prompt_text):
@@ -573,6 +600,9 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
             ]
             if value
         ]
+        return " ".join(parts) if parts else "[Missing information needed]"
+    if re.search(r"\b(calculation basis|basis of calculation|cost basis|financial assumption|budget assumption)\b", prompt_text):
+        parts = [value for value in [budget_assumptions, budget_breakdown, remoteness_context] if value]
         return " ".join(parts) if parts else "[Missing information needed]"
     if re.search(r"\b(personnel cost|personnel costs|staff cost|staffing cost)\b", prompt_text):
         if re.search(r"\bprofessional services\b", prompt_text):
@@ -974,6 +1004,9 @@ def enhance_sections_with_metadata(
         "fallback_used": False,
         "fallback_reason": None,
         "enhanced_section_count": 0,
+        "rag_use_case": None,
+        "rag_collection": None,
+        "rag_context_chars": 0,
     }
     try:
         enhanced = enhance_sections(
@@ -985,6 +1018,7 @@ def enhance_sections_with_metadata(
             rag_persist_dir=rag_persist_dir,
             rag_collection_name=rag_collection_name,
             use_case=use_case,
+            trace_meta=meta,
         )
     except Exception as exc:
         meta["fallback_used"] = True
@@ -1077,6 +1111,7 @@ def enhance_sections(
     rag_persist_dir: Optional[str] = None,
     rag_collection_name: str = "grant_library",
     use_case: Optional[str] = None,
+    trace_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     """
     Returns dict mapping section_key -> improved body text
@@ -1102,6 +1137,10 @@ def enhance_sections(
     use_case_norm = normalize_use_case(use_case)
     rag_collection = collection_for_use_case(use_case_norm, base_collection=rag_collection_name)
     payload["rag_use_case"] = use_case_norm
+    if trace_meta is not None:
+        trace_meta["rag_use_case"] = use_case_norm
+        trace_meta["rag_collection"] = rag_collection
+        trace_meta["rag_context_chars"] = 0
 
     # RAG: retrieve relevant grant-library context and add to payload when available
     if use_rag:
@@ -1119,6 +1158,8 @@ def enhance_sections(
             persist_dir=rag_persist_dir,
             collection_name=rag_collection,
         )
+        if trace_meta is not None:
+            trace_meta["rag_context_chars"] = len(rag_context or "")
         if rag_context:
             payload["grant_library_excerpts"] = rag_context
             payload["instructions"].append(
