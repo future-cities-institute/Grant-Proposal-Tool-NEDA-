@@ -15,6 +15,7 @@ _RAG_AVAILABLE: Optional[bool] = None
 logger = logging.getLogger(__name__)
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 APP_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "data" / "app_library"
+BASE_RAG_COLLECTION = "grant_library"
 
 
 def _openai_sdk_available() -> bool:
@@ -31,6 +32,9 @@ def _get_rag_context(
 ) -> str:
     """Retrieve relevant grant-library excerpts for the query. Returns empty string if RAG unavailable."""
     global _RAG_AVAILABLE
+    attempted_collections = _candidate_rag_collections(collection_name)
+    if trace_meta is not None:
+        trace_meta["rag_vector_attempted_collections"] = attempted_collections
     if _RAG_AVAILABLE is False:
         fallback = _get_keyword_rag_context(query, top_k=top_k)
         if trace_meta is not None:
@@ -41,20 +45,29 @@ def _get_rag_context(
     try:
         from backend.app.rag.retrieve import retrieve
         _RAG_AVAILABLE = True
-        out = retrieve(
-            query=query,
-            top_k=top_k,
-            persist_dir=persist_dir,
-            collection_name=collection_name,
-            where=where,
-        )
-        out = (out or "").strip()
-        if out:
-            return out
+        vector_errors: list[str] = []
+        for candidate_collection in attempted_collections:
+            try:
+                out = retrieve(
+                    query=query,
+                    top_k=top_k,
+                    persist_dir=persist_dir,
+                    collection_name=candidate_collection,
+                    where=where,
+                )
+            except Exception as exc:
+                vector_errors.append(f"{candidate_collection}: {type(exc).__name__}: {exc}")
+                continue
+            out = (out or "").strip()
+            if out:
+                if trace_meta is not None:
+                    trace_meta["rag_vector_collection_used"] = candidate_collection
+                return out
         fallback = _get_keyword_rag_context(query, top_k=top_k)
         if trace_meta is not None:
             trace_meta["rag_fallback_used"] = bool(fallback)
             trace_meta["rag_fallback_reason"] = "vector_rag_returned_empty"
+            trace_meta["rag_error"] = "; ".join(vector_errors) or None
             trace_meta["rag_context_chars"] = len(fallback)
         return fallback
     except Exception as exc:
@@ -66,6 +79,14 @@ def _get_rag_context(
             trace_meta["rag_fallback_reason"] = "vector_rag_exception"
             trace_meta["rag_context_chars"] = len(fallback)
         return fallback
+
+
+def _candidate_rag_collections(collection_name: str) -> List[str]:
+    requested = (collection_name or BASE_RAG_COLLECTION).strip() or BASE_RAG_COLLECTION
+    candidates = [requested]
+    if requested != BASE_RAG_COLLECTION and requested.startswith(f"{BASE_RAG_COLLECTION}_"):
+        candidates.append(BASE_RAG_COLLECTION)
+    return list(dict.fromkeys(candidates))
 
 
 def _get_keyword_rag_context(query: str, top_k: int = 6) -> str:
@@ -297,6 +318,58 @@ def _build_payload(
         ],
     }
     return payload
+
+
+def _build_rag_query(
+    *,
+    grant_name: str,
+    requirements: Dict[str, Any],
+    profile: Dict[str, Any],
+    sections: List[Dict[str, Any]],
+) -> str:
+    profile_fields = [
+        profile.get("community_name"),
+        profile.get("region"),
+        profile.get("local_priority"),
+        profile.get("project_title"),
+        profile.get("project_type"),
+        profile.get("project_stage"),
+        profile.get("project_summary"),
+        profile.get("project_objectives"),
+        profile.get("target_beneficiaries"),
+        profile.get("service_gaps"),
+        profile.get("challenges"),
+        profile.get("strengths"),
+        profile.get("expected_outcomes"),
+        profile.get("community_engagement"),
+        profile.get("data_governance"),
+        profile.get("risks_and_mitigation"),
+    ]
+    section_titles = [
+        str(section.get("title") or "")
+        for section in sections or []
+        if str(section.get("title") or "").strip()
+    ][:12]
+    prompt_phrases = []
+    for section in sections or []:
+        for item in section.get("prompt_items", []) or []:
+            text = str(item.get("prompt_text") or "").strip()
+            if text:
+                prompt_phrases.append(text)
+            if len(prompt_phrases) >= 16:
+                break
+        if len(prompt_phrases) >= 16:
+            break
+
+    raw_req = (requirements.get("raw_text") or "")[:1200]
+    parts = [
+        grant_name,
+        " ".join(str(value).strip() for value in profile_fields if str(value or "").strip()),
+        "Sections: " + "; ".join(section_titles) if section_titles else "",
+        "Required prompts: " + "; ".join(prompt_phrases) if prompt_phrases else "",
+        raw_req,
+    ]
+    return "\n\n".join(part for part in parts if part).strip() or "grant application community economic development"
 
 
 def _prompt_answered_in_text(prompt_item: Dict[str, Any], section_text: str) -> bool:
@@ -1312,6 +1385,9 @@ def enhance_sections_with_metadata(
         "rag_error": None,
         "rag_fallback_used": False,
         "rag_fallback_reason": None,
+        "rag_vector_attempted_collections": [],
+        "rag_vector_collection_used": None,
+        "rag_query_chars": 0,
     }
     try:
         enhanced = enhance_sections(
@@ -1470,8 +1546,14 @@ def enhance_sections(
             or requirements.get("name")
             or ""
         )
-        raw_req = (requirements.get("raw_text") or "")[:2000]
-        rag_query = f"{grant_name}\n\n{raw_req}".strip() or "grant application community economic development"
+        rag_query = _build_rag_query(
+            grant_name=grant_name,
+            requirements=requirements,
+            profile=profile,
+            sections=sections,
+        )
+        if trace_meta is not None:
+            trace_meta["rag_query_chars"] = len(rag_query)
         rag_context = _get_rag_context(
             query=rag_query,
             top_k=rag_top_k,

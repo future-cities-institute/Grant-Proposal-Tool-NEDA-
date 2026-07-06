@@ -777,12 +777,15 @@ def enhance(body: EnhanceRequest):
     )
     meta = result.get("meta", {}) if isinstance(result, dict) else {}
     logger.info(
-        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s rag_collection=%s rag_chars=%s rag_fallback_used=%s rag_fallback_reason=%s rag_error=%s structured_answers=%s",
+        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s rag_collection=%s rag_vector_used=%s rag_vector_attempted=%s rag_query_chars=%s rag_chars=%s rag_fallback_used=%s rag_fallback_reason=%s rag_error=%s structured_answers=%s",
         section_count,
         meta.get("enhanced_section_count"),
         meta.get("fallback_used"),
         meta.get("fallback_reason") or "none",
         meta.get("rag_collection") or "none",
+        meta.get("rag_vector_collection_used") or "none",
+        ",".join(meta.get("rag_vector_attempted_collections") or []) or "none",
+        meta.get("rag_query_chars"),
         meta.get("rag_context_chars"),
         meta.get("rag_fallback_used"),
         meta.get("rag_fallback_reason") or "none",
