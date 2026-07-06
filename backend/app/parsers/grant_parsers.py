@@ -944,12 +944,31 @@ def _answer_type_from_response_style(response_style: str) -> str:
     return mapping.get(response_style or "", "narrative_short")
 
 
+def _response_style_from_answer_type(answer_type: str) -> str:
+    mapping = {
+        "field": "field",
+        "selection": "selection",
+        "multi_selection": "multi_selection",
+        "yes_no": "yes_no_explanation",
+        "narrative_short": "narrative_short",
+        "narrative_long": "narrative_long",
+        "budget_row": "budget_row",
+        "milestone_row": "milestone_row",
+        "upload": "upload_placeholder",
+        "attestation": "fixed_attestation",
+    }
+    return mapping.get((answer_type or "").strip(), "")
+
+
 def _normalize_prompt_item_schema(prompt_item: dict[str, Any], section_key: str) -> dict[str, Any]:
     prompt_id = str(prompt_item.get("prompt_id") or "").strip()
     prompt_text = str(prompt_item.get("prompt_text") or "").strip()
     detail_text = str(prompt_item.get("detail_text") or "").strip()
     prompt_type = str(prompt_item.get("prompt_type") or "narrative")
     response_style = str(prompt_item.get("response_style") or "")
+    answer_type = str(prompt_item.get("answer_type") or "").strip()
+    if not response_style and answer_type:
+        response_style = _response_style_from_answer_type(answer_type)
     normalized = {
         "prompt_id": prompt_id,
         "label": prompt_id,
@@ -958,7 +977,7 @@ def _normalize_prompt_item_schema(prompt_item: dict[str, Any], section_key: str)
         "detail_text": detail_text,
         "prompt_type": prompt_type,
         "response_style": response_style,
-        "answer_type": _answer_type_from_response_style(response_style),
+        "answer_type": answer_type or _answer_type_from_response_style(response_style),
         "word_limit": prompt_item.get("word_limit"),
         "required": bool(prompt_item.get("required")) or _is_prompt_required(prompt_text, detail_text),
         "sub_prompt": _is_sub_prompt_id(prompt_id),
@@ -1541,15 +1560,23 @@ def _extract_sections_with_llm(text: str) -> tuple[list[dict], str | None]:
         return [], "insufficient_text_for_llm_fallback"
 
     prompt = {
-        "task": "Extract concrete grant application sections from the posting text.",
+        "task": "Extract a high-recall grant application schema from the posting text.",
         "rules": [
             "Return JSON only.",
             "Prefer explicit required/expected sections in the application package.",
-            "Prefer top-level numbered headings (Roman numerals, numeric levels, lettered lists) when present.",
+            "Prefer applicant-facing application form sections, not process steps such as intake, review, decision, or agreement unless those are fields the applicant must complete.",
+            "Prefer top-level application headings when present, but preserve nested question IDs beneath them.",
             "Return sections the applicant must respond to; exclude context-only headings and administrative notes.",
             "Do not split a single required heading into multiple micro-sections unless the document clearly requires separate responses.",
             "Do not invent sections not implied by the text.",
-            "Each section needs key, title, guidance, and optional word_limit.",
+            "Each section needs key, title, guidance, optional word_limit, and prompt_items.",
+            "Extract every applicant response prompt, subprompt, form field, table row instruction, upload request, certification, and conditional follow-up.",
+            "Preserve prompt identifiers exactly when visible, including IDs like 4.1, 4.2, 4.2.a, Q16a, or A-3.",
+            "If a prompt has no visible ID, assign prompt_id as prompt_1, prompt_2, etc. within that section.",
+            "Keep prompt_text concise and applicant-facing. Put help text, examples, options, and instructions in detail_text.",
+            "Use parent_prompt_id for nested or conditional follow-ups.",
+            "Use answer_type only from: field, selection, multi_selection, yes_no, narrative_short, narrative_long, budget_row, milestone_row, upload, attestation.",
+            "Use narrative_long for broad project, need, work plan, outcomes, risk, sustainability, budget rationale, and governance responses.",
             "If limits are not explicit, omit word_limit.",
         ],
         "schema": {
@@ -1559,6 +1586,21 @@ def _extract_sections_with_llm(text: str) -> tuple[list[dict], str | None]:
                     "title": "Section Title",
                     "guidance": "What the applicant should cover in this section",
                     "word_limit": 500,
+                    "prompt_items": [
+                        {
+                            "prompt_id": "4.1",
+                            "label": "4.1",
+                            "prompt_text": "Describe the community need this project addresses.",
+                            "detail_text": "Include evidence, who identified the need, and who will benefit.",
+                            "answer_type": "narrative_long",
+                            "word_limit": 500,
+                            "required": True,
+                            "sub_prompt": True,
+                            "options": [],
+                            "parent_prompt_id": None,
+                            "conditional_on_previous": None,
+                        }
+                    ],
                 }
             ]
         },
@@ -1584,7 +1626,8 @@ def _extract_sections_with_llm(text: str) -> tuple[list[dict], str | None]:
             temperature=0.0,
         )
         data = json.loads(resp.choices[0].message.content or "{}")
-        return _normalize_sections((data.get("sections") or [])), None
+        sections = _normalize_sections((data.get("sections") or []))
+        return sections, None
     except Exception as exc:
         logger.exception("Grant section LLM fallback failed")
         return [], f"{type(exc).__name__}: {exc}"
