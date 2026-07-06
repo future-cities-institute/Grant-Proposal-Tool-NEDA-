@@ -942,6 +942,92 @@ def _ensure_prompt_structured_sections(
     return out
 
 
+def _prompt_blocks_to_narrative(section: Dict[str, Any], section_text: str) -> str:
+    blocks = []
+    for raw_block in re.split(r"\n\s*\n", section_text or ""):
+        lines = [line.strip() for line in raw_block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        first = lines[0]
+        match = re.match(r"^\s*(?:Q[\w.-]+|prompt_\d+|\d[\w.-]*)\s*:\s*(.+?)\s*$", first, flags=re.I)
+        if match:
+            prompt = match.group(1).strip()
+            answer = " ".join(lines[1:]).strip()
+        else:
+            prompt = ""
+            answer = " ".join(lines).strip()
+        if _is_missing_answer(answer):
+            continue
+        answer = _strip_prompt_metadata_lines(answer)
+        if not answer or _is_missing_answer(answer):
+            continue
+        blocks.append({"prompt": prompt, "answer": answer})
+
+    if not blocks:
+        cleaned = _strip_prompt_metadata_lines(section_text or "").strip()
+        return cleaned
+
+    title = str(section.get("title") or "This section").strip()
+    narrative_answers = []
+    factual_lines = []
+    for block in blocks:
+        answer = block["answer"].strip()
+        if not answer:
+            continue
+        if len(answer.split()) <= 12 and block["prompt"] and _is_factual_prompt_label(block["prompt"]):
+            factual_lines.append(f"{block['prompt']}: {answer}")
+        else:
+            narrative_answers.append(answer.rstrip(".") + ".")
+
+    paragraphs: list[str] = []
+    if narrative_answers:
+        current: list[str] = []
+        current_words = 0
+        for answer in narrative_answers:
+            words = len(answer.split())
+            if current and current_words + words > 150:
+                paragraphs.append(" ".join(current))
+                current = []
+                current_words = 0
+            current.append(answer)
+            current_words += words
+        if current:
+            paragraphs.append(" ".join(current))
+
+    if factual_lines:
+        factual_intro = f"Key {title.lower()} details include " + "; ".join(factual_lines) + "."
+        paragraphs.insert(0, factual_intro)
+
+    return "\n\n".join(paragraphs).strip()
+
+
+def _is_factual_prompt_label(prompt: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(legal name|operating name|contact|email|phone|address|website|"
+            r"project title|amount|funding request|category|type|date|year|"
+            r"registration|number|authorized signing officer)\b",
+            prompt or "",
+            flags=re.I,
+        )
+    )
+
+
+def _compose_narrative_sections(
+    sections: List[Dict[str, Any]],
+    structured: Dict[str, str],
+) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for section in sections or []:
+        key = str(section.get("key") or "")
+        if not key:
+            continue
+        text = str(structured.get(key) or section.get("body") or "")
+        prompt_items = section.get("prompt_items") or []
+        out[key] = _prompt_blocks_to_narrative(section, text) if prompt_items else text
+    return out
+
+
 def _build_prompt_coverage_map(
     sections: List[Dict[str, Any]],
     enhanced: Dict[str, str],
@@ -1034,18 +1120,24 @@ def enhance_sections_with_metadata(
     if not enhanced:
         meta["fallback_used"] = True
         meta["fallback_reason"] = meta["fallback_reason"] or "enhancement_returned_no_sections"
-    enhanced = _ensure_prompt_structured_sections(
+    structured_enhanced = _ensure_prompt_structured_sections(
         sections=sections,
         enhanced=enhanced,
         profile=profile or {},
         requirements=requirements,
     )
-    meta["enhanced_section_count"] = len(enhanced)
+    narrative_enhanced = _compose_narrative_sections(
+        sections=sections,
+        structured=structured_enhanced,
+    )
+    meta["enhanced_section_count"] = len(narrative_enhanced)
+    meta["structured_answer_section_count"] = len(structured_enhanced)
+    meta["narrative_composer_used"] = True
     return {
-        "enhanced": enhanced,
+        "enhanced": narrative_enhanced,
         "prompt_coverage": _build_prompt_coverage_map(
             sections=sections,
-            enhanced=enhanced,
+            enhanced=structured_enhanced,
             requirements=requirements,
         ),
         "meta": meta,
