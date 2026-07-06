@@ -941,6 +941,88 @@ def _answer_from_prompt_block(block: str) -> str:
     return "\n".join((block or "").splitlines()[1:]).strip()
 
 
+def _parse_list_answer(answer: str) -> List[str]:
+    raw = (answer or "").strip()
+    if not raw:
+        return []
+
+    if re.match(r"^\[[\s\S]*\]$", raw):
+        items = [
+            (match.group(1) or match.group(2) or "").strip()
+            for match in re.finditer(r"'([^']+)'|\"([^\"]+)\"", raw)
+        ]
+        return [item for item in items if item]
+
+    bullet_lines = [
+        re.sub(r"^\s*[-*]\s+", "", line).strip()
+        for line in raw.splitlines()
+        if re.match(r"^\s*[-*]\s+\S", line)
+    ]
+    return [item for item in bullet_lines if item]
+
+
+def _join_list_items(items: List[str]) -> str:
+    cleaned = [item.strip().rstrip(".") for item in items if item.strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} and {cleaned[1]}"
+    return f"{'; '.join(cleaned[:-1])}; and {cleaned[-1]}"
+
+
+def _normalize_answer_for_narrative(prompt: str, answer: str) -> str:
+    items = _parse_list_answer(answer)
+    if not items:
+        return re.sub(r"\s+", " ", (answer or "").strip())
+
+    joined = _join_list_items(items)
+    prompt_lower = (prompt or "").lower()
+    if re.search(r"\b(priority area|priority areas|category|categories)\b", prompt_lower):
+        return f"The selected categories are {joined}."
+    if re.search(r"\b(confirm|certif|declaration|attestation|statement)\b", prompt_lower):
+        return f"The applicant confirms {joined}."
+    return joined
+
+
+def _factual_answer_sentence(prompt: str, answer: str) -> str:
+    prompt_clean = re.sub(r"\s+", " ", (prompt or "").strip()).rstrip(".?")
+    answer_clean = re.sub(r"\s+", " ", (answer or "").strip()).rstrip(".")
+    prompt_lower = prompt_clean.lower()
+
+    if not answer_clean:
+        return ""
+    if "select the category" in prompt_lower or "legal applicant" in prompt_lower:
+        return f"The legal applicant category is {answer_clean}."
+    if "project title" in prompt_lower:
+        return f"The project title is {answer_clean}."
+    if "primary application contact" in prompt_lower:
+        return f"The primary application contact is {answer_clean}."
+    if "authorized signing officer" in prompt_lower:
+        return f"The authorized signing officer is {answer_clean}."
+    if "finance and reporting contact" in prompt_lower:
+        return f"The finance and reporting contact is {answer_clean}."
+    if "funding request" in prompt_lower or "requested amount" in prompt_lower:
+        return f"The funding request is {answer_clean}."
+    if "total project cost" in prompt_lower:
+        return f"The total project cost is {answer_clean}."
+    if "legal name" in prompt_lower:
+        return f"The legal name is {answer_clean}."
+    if "operating name" in prompt_lower:
+        return f"The operating name is {answer_clean}."
+    if "mailing address" in prompt_lower or "address" == prompt_lower:
+        return f"The mailing address is {answer_clean}."
+    if "website" in prompt_lower:
+        return f"The website is {answer_clean}."
+    if "registration number" in prompt_lower:
+        return f"The registration number is {answer_clean}."
+    if "year established" in prompt_lower:
+        return f"The year established is {answer_clean}."
+
+    return f"{prompt_clean}: {answer_clean}."
+
+
 def _ensure_prompt_structured_sections(
     sections: List[Dict[str, Any]],
     enhanced: Dict[str, str],
@@ -1026,7 +1108,10 @@ def _prompt_blocks_to_narrative(section: Dict[str, Any], section_text: str) -> s
             answer = " ".join(lines).strip()
         if _is_missing_answer(answer):
             continue
-        answer = _strip_prompt_metadata_lines(answer)
+        answer = _normalize_answer_for_narrative(
+            prompt,
+            _strip_prompt_metadata_lines(answer),
+        )
         if not answer or _is_missing_answer(answer):
             continue
         blocks.append({"prompt": prompt, "answer": answer})
@@ -1042,8 +1127,10 @@ def _prompt_blocks_to_narrative(section: Dict[str, Any], section_text: str) -> s
         answer = block["answer"].strip()
         if not answer:
             continue
-        if len(answer.split()) <= 12 and block["prompt"] and _is_factual_prompt_label(block["prompt"]):
-            factual_lines.append(f"{block['prompt']}: {answer}")
+        if len(answer.split()) <= 18 and block["prompt"] and _is_factual_prompt_label(block["prompt"]):
+            factual_sentence = _factual_answer_sentence(block["prompt"], answer)
+            if factual_sentence:
+                factual_lines.append(factual_sentence)
         else:
             narrative_answers.append(answer.rstrip(".") + ".")
 
@@ -1063,7 +1150,7 @@ def _prompt_blocks_to_narrative(section: Dict[str, Any], section_text: str) -> s
             paragraphs.append(" ".join(current))
 
     if factual_lines:
-        factual_intro = f"Key {title.lower()} details include " + "; ".join(factual_lines) + "."
+        factual_intro = " ".join(line.rstrip(".") + "." for line in factual_lines)
         paragraphs.insert(0, factual_intro)
 
     return "\n\n".join(paragraphs).strip()

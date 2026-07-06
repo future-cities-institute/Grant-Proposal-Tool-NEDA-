@@ -68,3 +68,35 @@ def test_build_structured_answers_map_preserves_question_traceability():
     assert answer["answer"] == "The project addresses water service reliability."
     assert answer["answered"] is True
     assert answer["required"] is True
+
+
+def test_prompt_blocks_to_narrative_formats_short_facts_without_scaffold_text():
+    section = {"key": "eligibility", "title": "Eligibility and Applicant Authority"}
+    text = """1.1: Select the category that best describes the legal applicant.
+Inuit government or organization
+
+1.2: Confirm the applicant declarations.
+['Information in this application is accurate to the best of our knowledge.', 'The applicant has authority to apply and enter a funding agreement.']"""
+
+    narrative = _prompt_blocks_to_narrative(section, text)
+
+    assert "Key eligibility" not in narrative
+    assert "Select the category" not in narrative
+    assert "['" not in narrative
+    assert "The legal applicant category is Inuit government or organization." in narrative
+    assert "The applicant confirms Information in this application is accurate" in narrative
+
+
+def test_prompt_blocks_to_narrative_formats_priority_area_lists():
+    section = {"key": "glance", "title": "Project at a Glance"}
+    text = """3.2: Priority area(s)
+['Housing, infrastructure or community spaces', 'Health, healing and well-being']
+
+3.3: Plain-language project summary
+The project will upgrade critical water infrastructure and strengthen local maintenance capacity."""
+
+    narrative = _prompt_blocks_to_narrative(section, text)
+
+    assert "['" not in narrative
+    assert "The selected categories are Housing, infrastructure or community spaces and Health, healing and well-being." in narrative
+    assert "The project will upgrade critical water infrastructure" in narrative
