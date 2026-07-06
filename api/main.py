@@ -328,7 +328,9 @@ def _export_blocks(section_text: str) -> List[Dict[str, str]]:
         if match:
             saw_prompt_blocks = True
             flush()
-            current_label = match.group(2).strip().rstrip(".")
+            prompt_id = match.group(1).strip()
+            prompt_text = match.group(2).strip().rstrip(".")
+            current_label = f"{prompt_id}: {prompt_text}"
             current_answer = []
             continue
         if current_label is not None:

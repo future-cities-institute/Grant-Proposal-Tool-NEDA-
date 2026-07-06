@@ -27,6 +27,7 @@ import {
   type DraftSection,
   type ComplianceSummary,
   type PromptCoverageSection,
+  type StructuredAnswersSection,
   exportDraftPdf,
   createSavedProposal,
   updateSavedProposal,
@@ -53,6 +54,7 @@ export default function ProposalPage() {
   const [profile, setProfile] = useState<CommunityProfile | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [enhanced, setEnhanced] = useState<Record<string, string> | null>(null);
+  const [structuredAnswers, setStructuredAnswers] = useState<Record<string, StructuredAnswersSection>>({});
   const [promptCoverage, setPromptCoverage] = useState<Record<string, PromptCoverageSection>>({});
   const [validation, setValidation] = useState<ComplianceSummary | null>(null);
   const [finalSections, setFinalSections] = useState<DraftSection[]>([]);
@@ -144,6 +146,7 @@ export default function ProposalPage() {
     onSuccess: (data) => {
       setDraft(data.draft);
       setEnhanced(data.enhanced);
+      setStructuredAnswers(data.structuredAnswers);
       setPromptCoverage(data.promptCoverage);
       setValidation(data.validation);
       setStep(4);
@@ -451,11 +454,11 @@ export default function ProposalPage() {
                 requirements={requirements}
                 profile={profile}
                 onContinueToExport={(sections) => {
-                  setFinalSections(sections);
+                  setFinalSections(buildQuestionFormattedSections(sections, structuredAnswers));
                   setStep(5);
                   if (proposalId) {
                     void updateSavedProposal(proposalId, {
-                      final_sections: sections,
+                      final_sections: buildQuestionFormattedSections(sections, structuredAnswers),
                       status: "ready_to_export",
                       current_step: 5,
                     });
@@ -528,4 +531,51 @@ export default function ProposalPage() {
       </main>
     </div>
   );
+}
+
+function buildQuestionFormattedSections(
+  sections: DraftSection[],
+  structuredAnswers: Record<string, StructuredAnswersSection>
+): DraftSection[] {
+  return sections.map((section) => {
+    const structuredSection = structuredAnswers[section.key];
+    const answers = structuredSection?.answers || [];
+    if (!answers.length) {
+      return section;
+    }
+
+    return {
+      ...section,
+      title: structuredSection.section_title || section.title,
+      body: answers
+        .map((answer) => {
+          const promptId = answer.prompt_id?.trim();
+          const promptText = answer.prompt_text?.trim();
+          if (!promptId || !promptText) return "";
+          return `${promptId}: ${promptText}\n${normalizeStructuredExportAnswer(answer.answer)}`;
+        })
+        .filter(Boolean)
+        .join("\n\n"),
+    };
+  });
+}
+
+function normalizeStructuredExportAnswer(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Needs additional information.";
+
+  const pythonListMatch = raw.match(/^\[([\s\S]*)\]$/);
+  if (pythonListMatch) {
+    const items = Array.from(raw.matchAll(/'([^']+)'|"([^"]+)"/g))
+      .map((match) => (match[1] || match[2] || "").trim())
+      .filter(Boolean);
+    if (items.length) {
+      return items.map((item) => `- ${item}`).join("\n");
+    }
+  }
+
+  return raw
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s+\./g, ".")
+    .trim();
 }
