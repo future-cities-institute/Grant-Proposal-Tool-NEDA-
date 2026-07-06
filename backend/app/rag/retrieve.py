@@ -54,3 +54,12 @@ def retrieve(
         )
 
     return "\n\n---\n\n".join(parts)
+
+
+def collection_count(
+    persist_dir: Optional[str] = None,
+    collection_name: str = "grant_library",
+) -> int:
+    """Return the number of vectors/documents in a persisted collection."""
+    col = get_collection(persist_dir=persist_dir, collection_name=collection_name)
+    return int(col.count())

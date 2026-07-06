@@ -43,11 +43,16 @@ def _get_rag_context(
             trace_meta["rag_context_chars"] = len(fallback)
         return fallback
     try:
-        from backend.app.rag.retrieve import retrieve
+        from backend.app.rag.retrieve import collection_count, retrieve
         _RAG_AVAILABLE = True
         vector_errors: list[str] = []
+        vector_counts: Dict[str, int | str] = {}
         for candidate_collection in attempted_collections:
             try:
+                vector_counts[candidate_collection] = collection_count(
+                    persist_dir=persist_dir,
+                    collection_name=candidate_collection,
+                )
                 out = retrieve(
                     query=query,
                     top_k=top_k,
@@ -56,12 +61,14 @@ def _get_rag_context(
                     where=where,
                 )
             except Exception as exc:
+                vector_counts.setdefault(candidate_collection, "error")
                 vector_errors.append(f"{candidate_collection}: {type(exc).__name__}: {exc}")
                 continue
             out = (out or "").strip()
             if out:
                 if trace_meta is not None:
                     trace_meta["rag_vector_collection_used"] = candidate_collection
+                    trace_meta["rag_vector_collection_counts"] = vector_counts
                 return out
         fallback = _get_keyword_rag_context(query, top_k=top_k)
         if trace_meta is not None:
@@ -69,6 +76,7 @@ def _get_rag_context(
             trace_meta["rag_fallback_reason"] = "vector_rag_returned_empty"
             trace_meta["rag_error"] = "; ".join(vector_errors) or None
             trace_meta["rag_context_chars"] = len(fallback)
+            trace_meta["rag_vector_collection_counts"] = vector_counts
         return fallback
     except Exception as exc:
         _RAG_AVAILABLE = False
@@ -1387,6 +1395,7 @@ def enhance_sections_with_metadata(
         "rag_fallback_reason": None,
         "rag_vector_attempted_collections": [],
         "rag_vector_collection_used": None,
+        "rag_vector_collection_counts": {},
         "rag_query_chars": 0,
     }
     try:
