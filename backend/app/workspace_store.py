@@ -111,6 +111,7 @@ def init_workspace_store() -> None:
                 profile_json TEXT,
                 draft_json TEXT,
                 enhanced_json TEXT,
+                structured_answers_json TEXT,
                 prompt_coverage_json TEXT,
                 validation_json TEXT,
                 final_sections_json TEXT,
@@ -121,10 +122,21 @@ def init_workspace_store() -> None:
             )
             """,
         )
+        _ensure_column(conn, "proposals", "structured_answers_json", "TEXT")
         _run(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_proposals_user_updated ON proposals(user_id, updated_at DESC)",
         )
+
+
+def _ensure_column(conn: Any, table: str, column: str, definition: str) -> None:
+    if _using_postgres():
+        _run(conn, f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+        return
+    rows = _run(conn, f"PRAGMA table_info({table})").fetchall()
+    existing = {row["name"] for row in rows}
+    if column not in existing:
+        _run(conn, f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def get_or_create_user(user_id: str, email: str, name: str) -> dict[str, Any]:
@@ -171,10 +183,10 @@ def create_proposal(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             INSERT INTO proposals (
                 id, user_id, title, community_name, grant_name, status, current_step,
                 requirements_json, profile_json, draft_json, enhanced_json,
-                prompt_coverage_json, validation_json, final_sections_json,
+                structured_answers_json, prompt_coverage_json, validation_json, final_sections_json,
                 created_at, updated_at, last_exported_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proposal_id,
@@ -188,6 +200,7 @@ def create_proposal(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                 _json_dump(payload.get("profile")),
                 _json_dump(payload.get("draft")),
                 _json_dump(payload.get("enhanced")),
+                _json_dump(payload.get("structured_answers")),
                 _json_dump(payload.get("prompt_coverage")),
                 _json_dump(payload.get("validation")),
                 _json_dump(payload.get("final_sections")),
@@ -239,7 +252,7 @@ def update_proposal(user_id: str, proposal_id: str, updates: dict[str, Any]) -> 
             UPDATE proposals
             SET title = ?, community_name = ?, grant_name = ?, status = ?, current_step = ?,
                 requirements_json = ?, profile_json = ?, draft_json = ?, enhanced_json = ?,
-                prompt_coverage_json = ?, validation_json = ?, final_sections_json = ?,
+                structured_answers_json = ?, prompt_coverage_json = ?, validation_json = ?, final_sections_json = ?,
                 updated_at = ?, last_exported_at = ?
             WHERE id = ? AND user_id = ?
             """,
@@ -253,6 +266,7 @@ def update_proposal(user_id: str, proposal_id: str, updates: dict[str, Any]) -> 
                 _json_dump(merged.get("profile")),
                 _json_dump(merged.get("draft")),
                 _json_dump(merged.get("enhanced")),
+                _json_dump(merged.get("structured_answers")),
                 _json_dump(merged.get("prompt_coverage")),
                 _json_dump(merged.get("validation")),
                 _json_dump(merged.get("final_sections")),
@@ -321,6 +335,7 @@ def _row_to_proposal(row: Any, *, include_payload: bool) -> dict[str, Any]:
                 "profile": _json_load(row["profile_json"]),
                 "draft": _json_load(row["draft_json"]),
                 "enhanced": _json_load(row["enhanced_json"]),
+                "structured_answers": _json_load(row["structured_answers_json"]),
                 "prompt_coverage": _json_load(row["prompt_coverage_json"]),
                 "validation": _json_load(row["validation_json"]),
                 "final_sections": _json_load(row["final_sections_json"]),

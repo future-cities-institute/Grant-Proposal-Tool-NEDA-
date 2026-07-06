@@ -248,6 +248,7 @@ class ProposalRecordRequest(BaseModel):
     profile: Optional[Dict[str, Any]] = None
     draft: Optional[Dict[str, Any]] = None
     enhanced: Optional[Dict[str, Any]] = None
+    structured_answers: Optional[Dict[str, Any]] = None
     prompt_coverage: Optional[Dict[str, Any]] = None
     validation: Optional[Dict[str, Any]] = None
     final_sections: Optional[List[Dict[str, Any]]] = None
@@ -774,13 +775,17 @@ def enhance(body: EnhanceRequest):
     )
     meta = result.get("meta", {}) if isinstance(result, dict) else {}
     logger.info(
-        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s rag_collection=%s rag_chars=%s",
+        "Enhance request completed sections=%s enhanced_sections=%s fallback_used=%s fallback_reason=%s rag_collection=%s rag_chars=%s rag_fallback_used=%s rag_fallback_reason=%s rag_error=%s structured_answers=%s",
         section_count,
         meta.get("enhanced_section_count"),
         meta.get("fallback_used"),
         meta.get("fallback_reason") or "none",
         meta.get("rag_collection") or "none",
         meta.get("rag_context_chars"),
+        meta.get("rag_fallback_used"),
+        meta.get("rag_fallback_reason") or "none",
+        meta.get("rag_error") or "none",
+        meta.get("structured_answer_count"),
     )
     return result
 

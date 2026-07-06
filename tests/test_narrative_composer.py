@@ -1,4 +1,8 @@
-from backend.app.llm.llm_utils import _compose_narrative_sections, _prompt_blocks_to_narrative
+from backend.app.llm.llm_utils import (
+    _build_structured_answers_map,
+    _compose_narrative_sections,
+    _prompt_blocks_to_narrative,
+)
 
 
 def test_prompt_blocks_to_narrative_removes_missing_placeholders_and_labels():
@@ -35,3 +39,32 @@ def test_compose_narrative_sections_only_rewrites_prompt_sections():
 
     assert narrative["need"] == "The project improves reliable access to clean drinking water."
     assert narrative["summary"] == "This long-form summary should be preserved."
+
+
+def test_build_structured_answers_map_preserves_question_traceability():
+    sections = [
+        {
+            "key": "need",
+            "title": "Community Need",
+            "prompt_items": [
+                {
+                    "prompt_id": "4.1",
+                    "prompt_text": "Describe the need.",
+                    "answer_type": "narrative_long",
+                    "required": True,
+                }
+            ],
+        }
+    ]
+    structured = {
+        "need": "4.1: Describe the need.\nThe project addresses water service reliability.",
+    }
+
+    answers = _build_structured_answers_map(sections, structured)
+
+    answer = answers["need"]["answers"][0]
+    assert answer["prompt_id"] == "4.1"
+    assert answer["prompt_text"] == "Describe the need."
+    assert answer["answer"] == "The project addresses water service reliability."
+    assert answer["answered"] is True
+    assert answer["required"] is True

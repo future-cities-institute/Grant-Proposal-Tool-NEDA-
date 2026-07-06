@@ -6,6 +6,7 @@ import json
 import logging
 import importlib.util
 import re
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 from backend.app.rag.use_cases import collection_for_use_case, normalize_use_case
@@ -13,6 +14,7 @@ from backend.app.rag.use_cases import collection_for_use_case, normalize_use_cas
 _RAG_AVAILABLE: Optional[bool] = None
 logger = logging.getLogger(__name__)
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+APP_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "data" / "app_library"
 
 
 def _openai_sdk_available() -> bool:
@@ -25,11 +27,17 @@ def _get_rag_context(
     persist_dir: Optional[str] = None,
     collection_name: str = "grant_library",
     where: Optional[Dict[str, Any]] = None,
+    trace_meta: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Retrieve relevant grant-library excerpts for the query. Returns empty string if RAG unavailable."""
     global _RAG_AVAILABLE
     if _RAG_AVAILABLE is False:
-        return ""
+        fallback = _get_keyword_rag_context(query, top_k=top_k)
+        if trace_meta is not None:
+            trace_meta["rag_fallback_used"] = bool(fallback)
+            trace_meta["rag_fallback_reason"] = "vector_rag_previously_unavailable"
+            trace_meta["rag_context_chars"] = len(fallback)
+        return fallback
     try:
         from backend.app.rag.retrieve import retrieve
         _RAG_AVAILABLE = True
@@ -40,10 +48,70 @@ def _get_rag_context(
             collection_name=collection_name,
             where=where,
         )
-        return (out or "").strip()
-    except Exception:
+        out = (out or "").strip()
+        if out:
+            return out
+        fallback = _get_keyword_rag_context(query, top_k=top_k)
+        if trace_meta is not None:
+            trace_meta["rag_fallback_used"] = bool(fallback)
+            trace_meta["rag_fallback_reason"] = "vector_rag_returned_empty"
+            trace_meta["rag_context_chars"] = len(fallback)
+        return fallback
+    except Exception as exc:
         _RAG_AVAILABLE = False
+        fallback = _get_keyword_rag_context(query, top_k=top_k)
+        if trace_meta is not None:
+            trace_meta["rag_error"] = f"{type(exc).__name__}: {exc}"
+            trace_meta["rag_fallback_used"] = bool(fallback)
+            trace_meta["rag_fallback_reason"] = "vector_rag_exception"
+            trace_meta["rag_context_chars"] = len(fallback)
+        return fallback
+
+
+def _get_keyword_rag_context(query: str, top_k: int = 6) -> str:
+    tokens = [
+        token.lower()
+        for token in re.findall(r"[A-Za-z][A-Za-z'-]{3,}", query or "")
+        if token.lower()
+        not in {
+            "this",
+            "that",
+            "with",
+            "from",
+            "grant",
+            "application",
+            "proposal",
+            "project",
+            "section",
+            "community",
+            "funding",
+        }
+    ][:30]
+    if not tokens or not APP_LIBRARY_DIR.exists():
         return ""
+
+    scored: list[tuple[int, Path, str]] = []
+    for path in APP_LIBRARY_DIR.rglob("*.txt"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        haystack = text.lower()
+        score = sum(haystack.count(token) for token in tokens)
+        if score <= 0:
+            continue
+        first_hit = min((haystack.find(token) for token in tokens if token in haystack), default=0)
+        start = max(0, first_hit - 500)
+        end = min(len(text), first_hit + 1500)
+        snippet = re.sub(r"\s+", " ", text[start:end]).strip()
+        scored.append((score, path, snippet))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    parts = []
+    for index, (score, path, snippet) in enumerate(scored[:top_k], start=1):
+        rel = path.relative_to(APP_LIBRARY_DIR)
+        parts.append(f"[{index}] Source: {rel} (keyword score {score})\n{snippet}")
+    return "\n\n---\n\n".join(parts)
 
 
 def _build_payload(
@@ -1028,6 +1096,67 @@ def _compose_narrative_sections(
     return out
 
 
+def _answer_from_structured_text(prompt_id: str, section_text: str) -> str:
+    match = _prompt_block_pattern(prompt_id).search(section_text or "")
+    if not match:
+        return ""
+    return _strip_prompt_metadata_lines(_answer_from_prompt_block(match.group(0).strip()))
+
+
+def _build_structured_answers_map(
+    sections: List[Dict[str, Any]],
+    structured: Dict[str, str],
+    requirements: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    requirements_by_key = {
+        str(section.get("key") or ""): section
+        for section in (requirements or {}).get("sections", []) or []
+    }
+    out: Dict[str, Any] = {}
+    for section in sections or []:
+        section_key = str(section.get("key") or "")
+        if not section_key:
+            continue
+        prompt_items = (
+            section.get("prompt_items")
+            or requirements_by_key.get(section_key, {}).get("prompt_items", [])
+            or []
+        )
+        items = []
+        section_text = structured.get(section_key) or str(section.get("body") or "")
+        for item in prompt_items:
+            prompt_id = str(item.get("prompt_id") or "").strip()
+            prompt_text = str(item.get("prompt_text") or "").strip()
+            if not prompt_id or not prompt_text:
+                continue
+            answer = _answer_from_structured_text(prompt_id, section_text)
+            state = _prompt_answer_state(item, section_text)
+            items.append(
+                {
+                    "prompt_id": prompt_id,
+                    "prompt_text": prompt_text,
+                    "answer": answer,
+                    "answered": state.get("status") in {"answered", "needs_review"},
+                    "status": state.get("status"),
+                    "confidence": state.get("confidence"),
+                    "review_note": state.get("review_note"),
+                    "answer_type": item.get("answer_type"),
+                    "response_style": item.get("response_style"),
+                    "required": bool(item.get("required")),
+                    "options": item.get("options") or [],
+                    "parent_prompt_id": item.get("parent_prompt_id"),
+                    "conditional_on_previous": item.get("conditional_on_previous"),
+                }
+            )
+        if items:
+            out[section_key] = {
+                "section_key": section_key,
+                "section_title": str(section.get("title") or ""),
+                "answers": items,
+            }
+    return out
+
+
 def _build_prompt_coverage_map(
     sections: List[Dict[str, Any]],
     enhanced: Dict[str, str],
@@ -1093,6 +1222,9 @@ def enhance_sections_with_metadata(
         "rag_use_case": None,
         "rag_collection": None,
         "rag_context_chars": 0,
+        "rag_error": None,
+        "rag_fallback_used": False,
+        "rag_fallback_reason": None,
     }
     try:
         enhanced = enhance_sections(
@@ -1130,11 +1262,20 @@ def enhance_sections_with_metadata(
         sections=sections,
         structured=structured_enhanced,
     )
+    structured_answers = _build_structured_answers_map(
+        sections=sections,
+        structured=structured_enhanced,
+        requirements=requirements,
+    )
     meta["enhanced_section_count"] = len(narrative_enhanced)
     meta["structured_answer_section_count"] = len(structured_enhanced)
+    meta["structured_answer_count"] = sum(
+        len(section.get("answers", [])) for section in structured_answers.values()
+    )
     meta["narrative_composer_used"] = True
     return {
         "enhanced": narrative_enhanced,
+        "structured_answers": structured_answers,
         "prompt_coverage": _build_prompt_coverage_map(
             sections=sections,
             enhanced=structured_enhanced,
@@ -1249,6 +1390,7 @@ def enhance_sections(
             top_k=rag_top_k,
             persist_dir=rag_persist_dir,
             collection_name=rag_collection,
+            trace_meta=trace_meta,
         )
         if trace_meta is not None:
             trace_meta["rag_context_chars"] = len(rag_context or "")

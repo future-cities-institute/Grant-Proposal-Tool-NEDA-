@@ -191,6 +191,26 @@ export type PromptCoverageSection = {
   }>;
 };
 
+export type StructuredAnswersSection = {
+  section_key: string;
+  section_title: string;
+  answers: Array<{
+    prompt_id: string;
+    prompt_text: string;
+    answer: string;
+    answered: boolean;
+    status?: "answered" | "needs_review" | "missing";
+    confidence?: "high" | "medium" | "low";
+    review_note?: string;
+    answer_type?: string;
+    response_style?: string;
+    required?: boolean;
+    options?: string[];
+    parent_prompt_id?: string | null;
+    conditional_on_previous?: string | null;
+  }>;
+};
+
 export type ValidationResult = {
   gaps: string[];
   warnings: string[];
@@ -369,6 +389,7 @@ export type SavedProposal = {
   profile?: CommunityProfile | null;
   draft?: Draft | null;
   enhanced?: Record<string, string> | null;
+  structured_answers?: Record<string, StructuredAnswersSection> | null;
   prompt_coverage?: Record<string, PromptCoverageSection> | null;
   validation?: ComplianceSummary | null;
   final_sections?: DraftSection[] | null;
@@ -386,6 +407,7 @@ export type SavedProposalInput = Partial<
     | "profile"
     | "draft"
     | "enhanced"
+    | "structured_answers"
     | "prompt_coverage"
     | "validation"
     | "final_sections"
@@ -528,6 +550,7 @@ export async function enhanceDraft(
   useCase: string = RAG_USE_CASE
 ): Promise<{
   enhanced: Record<string, string>;
+  structured_answers?: Record<string, StructuredAnswersSection>;
   prompt_coverage: Record<string, PromptCoverageSection>;
 }> {
   const res = await fetch(`${API_BASE}/api/enhance`, {

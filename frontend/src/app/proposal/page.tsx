@@ -129,9 +129,17 @@ export default function ProposalPage() {
       budget: number;
     }) => {
       const d = await generateDraft(p, r, budget);
-      const { enhanced: enh, prompt_coverage } = await enhanceDraft(d, r, p);
+      const { enhanced: enh, structured_answers, prompt_coverage } = await enhanceDraft(d, r, p);
       const val = await evaluateDraftCompliance(d.sections || []);
-      return { draft: d, enhanced: enh, promptCoverage: prompt_coverage || {}, validation: val, profile: p, requirements: r };
+      return {
+        draft: d,
+        enhanced: enh,
+        structuredAnswers: structured_answers || {},
+        promptCoverage: prompt_coverage || {},
+        validation: val,
+        profile: p,
+        requirements: r,
+      };
     },
     onSuccess: (data) => {
       setDraft(data.draft);
@@ -150,6 +158,7 @@ export default function ProposalPage() {
           profile: data.profile,
           draft: data.draft,
           enhanced: data.enhanced,
+          structured_answers: data.structuredAnswers,
           prompt_coverage: data.promptCoverage,
           validation: data.validation,
         });
