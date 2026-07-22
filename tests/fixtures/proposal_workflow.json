@@ -1,0 +1,120 @@
+{
+  "requirements": {
+    "grant_name": "Northern Community Infrastructure Fund",
+    "sections": [
+      {
+        "key": "community_need",
+        "title": "4. Community Need",
+        "guidance": "Describe the need, supporting evidence, and expected benefit.",
+        "word_limit": 500,
+        "prompt_items": [
+          {
+            "prompt_id": "4.1",
+            "prompt_text": "Describe the community need this project addresses.",
+            "detail_text": "Include evidence and identify who raised the need.",
+            "answer_type": "narrative_long",
+            "required": true
+          },
+          {
+            "prompt_id": "4.2",
+            "prompt_text": "Explain the expected community benefit.",
+            "answer_type": "narrative_short",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "eligibility": [
+      "Applicant is an eligible community government"
+    ],
+    "must_include": [
+      "Community need",
+      "Expected benefit"
+    ]
+  },
+  "profile": {
+    "community_name": "Example Northern Hamlet",
+    "region": "Northern Canada",
+    "local_priority": "Reliable drinking water infrastructure",
+    "project_title": "Community Water Reliability Project",
+    "project_summary": "Upgrade vulnerable water-system components and strengthen local maintenance capacity.",
+    "requested_budget": 425000
+  },
+  "draft": {
+    "meta": {
+      "community_name": "Example Northern Hamlet",
+      "local_priority": "Reliable drinking water infrastructure",
+      "requested_budget": 425000,
+      "grant_name": "Northern Community Infrastructure Fund"
+    },
+    "sections": [
+      {
+        "key": "community_need",
+        "title": "4. Community Need",
+        "body": "4.1: Describe the community need this project addresses.\nRepeated service disruptions affect households and community facilities.\n\n4.2: Explain the expected community benefit.\nThe project will improve service reliability and strengthen local maintenance capacity.",
+        "guidance": "Describe the need, supporting evidence, and expected benefit."
+      }
+    ]
+  },
+  "enhanced": {
+    "community_need": "Repeated service disruptions affect households and community facilities. The project will improve service reliability and strengthen local maintenance capacity."
+  },
+  "structured_answers": {
+    "community_need": {
+      "section_key": "community_need",
+      "section_title": "4. Community Need",
+      "answers": [
+        {
+          "prompt_id": "4.1",
+          "prompt_text": "Describe the community need this project addresses.",
+          "answer": "Repeated service disruptions affect households and community facilities.",
+          "answered": true,
+          "status": "answered",
+          "confidence": "high"
+        }
+      ]
+    }
+  },
+  "prompt_coverage": {
+    "community_need": {
+      "section_key": "community_need",
+      "section_title": "4. Community Need",
+      "prompts": [
+        {
+          "prompt_id": "4.1",
+          "prompt_text": "Describe the community need this project addresses.",
+          "answered": true,
+          "status": "answered",
+          "confidence": "high"
+        },
+        {
+          "prompt_id": "4.2",
+          "prompt_text": "Explain the expected community benefit.",
+          "answered": true,
+          "status": "needs_review",
+          "confidence": "medium",
+          "review_note": "Confirm the intended beneficiaries."
+        }
+      ]
+    }
+  },
+  "validation": {
+    "sectionResults": [
+      {
+        "section": "community_need",
+        "section_label": "4. Community Need",
+        "warnings": [],
+        "compliance_gaps": []
+      }
+    ],
+    "warnings": [],
+    "complianceGaps": []
+  },
+  "final_sections": [
+    {
+      "key": "community_need",
+      "title": "4. Community Need",
+      "body": "4.1: Describe the community need this project addresses.\nRepeated service disruptions affect households and community facilities.\n\n4.2: Explain the expected community benefit.\nThe project will improve service reliability and strengthen local maintenance capacity."
+    }
+  ]
+}
