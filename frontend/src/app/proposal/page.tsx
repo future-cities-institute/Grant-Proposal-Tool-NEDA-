@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   parseGrant,
   generateDraft,
@@ -32,8 +32,13 @@ import {
   createSavedProposal,
   updateSavedProposal,
   markSavedProposalExported,
+  getCommunityProfile,
 } from "@/lib/api";
-import { CommunityForm } from "@/components/CommunityForm";
+import {
+  CommunityForm,
+  blankCommunityFormValues,
+  type CommunityFormValues,
+} from "@/components/CommunityForm";
 import { ProposalSections } from "@/components/ProposalSections";
 import { ReportView } from "@/components/ReportView";
 import { cn } from "@/lib/utils";
@@ -42,12 +47,45 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const STEPS = [
   { id: 1, label: "Upload grant package" },
   { id: 2, label: "Review sections" },
-  { id: 3, label: "Community info" },
+  { id: 3, label: "Application details" },
   { id: 4, label: "Generate report" },
   { id: 5, label: "Export draft" },
 ];
 
+const COMMUNITY_PROFILE_KEYS: Array<keyof CommunityFormValues> = [
+  "community_name",
+  "region",
+  "legal_name",
+  "operating_name",
+  "applicant_type",
+  "applicant_profile",
+  "registration_number",
+  "year_established",
+  "contact_name",
+  "contact_title",
+  "contact_email",
+  "contact_phone",
+  "mailing_address",
+  "website",
+  "indigenous_communities",
+  "population_served",
+  "demographic_context",
+  "existing_services",
+  "service_gaps",
+  "remoteness_context",
+  "governance_context",
+  "strengths",
+  "data_governance",
+  "cultural_safety",
+];
+
+function applicationDetailsFrom(values: CommunityFormValues): Partial<CommunityProfile> {
+  const reusable = new Set<string>(COMMUNITY_PROFILE_KEYS);
+  return Object.fromEntries(Object.entries(values).filter(([key]) => !reusable.has(key))) as Partial<CommunityProfile>;
+}
+
 export default function ProposalPage() {
+  const communityProfileQuery = useQuery({ queryKey: ["community-profile"], queryFn: getCommunityProfile });
   const [step, setStep] = useState(1);
   const [grantFile, setGrantFile] = useState<File | null>(null);
   const [requirements, setRequirements] = useState<Requirements | null>(null);
@@ -60,6 +98,59 @@ export default function ProposalPage() {
   const [finalSections, setFinalSections] = useState<DraftSection[]>([]);
   const [exportError, setExportError] = useState<string>("");
   const [proposalId, setProposalId] = useState<string | null>(null);
+  const [communityFormValues, setCommunityFormValues] = useState<CommunityFormValues | null>(null);
+  const [communitySaveStatus, setCommunitySaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const communitySaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const latestCommunitySaveRef = useRef(0);
+
+  useEffect(() => {
+    if (communityProfileQuery.isLoading || communityFormValues) return;
+    setCommunityFormValues({
+      ...blankCommunityFormValues,
+      ...(communityProfileQuery.data?.profile || {}),
+    } as CommunityFormValues);
+  }, [communityFormValues, communityProfileQuery.data, communityProfileQuery.isLoading]);
+
+  const saveCommunityDraft = useCallback(
+    (values: CommunityFormValues) => {
+      if (!proposalId) return Promise.resolve(null);
+      const saveId = latestCommunitySaveRef.current + 1;
+      latestCommunitySaveRef.current = saveId;
+      setCommunitySaveStatus("saving");
+
+      const saveTask = communitySaveChainRef.current
+        .catch(() => undefined)
+        .then(() =>
+          updateSavedProposal(proposalId, {
+            application_details: applicationDetailsFrom(values),
+            community_profile_id: communityProfileQuery.data?.id || null,
+            community_profile_snapshot: communityProfileQuery.data?.profile || {},
+            community_name: communityProfileQuery.data?.profile.community_name || "",
+          })
+        );
+
+      communitySaveChainRef.current = saveTask;
+      void saveTask.then(
+        () => {
+          if (latestCommunitySaveRef.current === saveId) setCommunitySaveStatus("saved");
+        },
+        () => {
+          if (latestCommunitySaveRef.current === saveId) setCommunitySaveStatus("error");
+        }
+      );
+      return saveTask;
+    },
+    [communityProfileQuery.data, proposalId]
+  );
+
+  useEffect(() => {
+    if (step !== 3 || !proposalId || !communityFormValues) return;
+    setCommunitySaveStatus("saving");
+    const timeoutId = window.setTimeout(() => {
+      void saveCommunityDraft(communityFormValues);
+    }, 1200);
+    return () => window.clearTimeout(timeoutId);
+  }, [communityFormValues, proposalId, saveCommunityDraft, step]);
 
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -195,23 +286,42 @@ export default function ProposalPage() {
   const handleGenerate = useCallback(
     (formProfile: CommunityProfile & { requested_budget: number }) => {
       if (!requirements) return;
-      setProfile(formProfile);
+      const combinedProfile = {
+        ...(communityProfileQuery.data?.profile || {}),
+        ...applicationDetailsFrom(formProfile as CommunityFormValues),
+      } as CommunityProfile & { requested_budget: number };
+      setProfile(combinedProfile);
+      setCommunityFormValues(combinedProfile as CommunityFormValues);
       if (proposalId) {
         void updateSavedProposal(proposalId, {
-          profile: formProfile,
-          community_name: formProfile.community_name || "",
+          profile: combinedProfile,
+          application_details: applicationDetailsFrom(formProfile as CommunityFormValues),
+          community_profile_id: communityProfileQuery.data?.id || null,
+          community_profile_snapshot: communityProfileQuery.data?.profile || {},
+          community_name: combinedProfile.community_name || "",
           status: "intake_completed",
           current_step: 3,
         });
       }
       generateMutation.mutate({
-        profile: { ...formProfile, requested_budget: formProfile.requested_budget },
+        profile: combinedProfile,
         requirements,
-        budget: formProfile.requested_budget,
+        budget: combinedProfile.requested_budget,
       });
     },
-    [requirements, generateMutation]
+    [communityProfileQuery.data, requirements, generateMutation, proposalId]
   );
+
+  const handleCommunityBack = useCallback(async () => {
+    if (communityFormValues && proposalId) {
+      try {
+        await saveCommunityDraft(communityFormValues);
+      } catch {
+        // Keep navigation available; the form values remain in builder state.
+      }
+    }
+    setStep(2);
+  }, [communityFormValues, proposalId, saveCommunityDraft]);
 
   const handleSectionTitleChange = useCallback(
     (sectionKey: string, title: string) => {
@@ -422,7 +532,7 @@ export default function ProposalPage() {
           )}
 
           {/* Step 3: Community form */}
-          {step === 3 && requirements && (
+          {step === 3 && requirements && communityFormValues && (
             <motion.div
               key="step3"
               initial={{ opacity: 0, y: 8 }}
@@ -433,9 +543,21 @@ export default function ProposalPage() {
                 onSubmit={handleGenerate}
                 isSubmitting={generateMutation.isPending}
                 error={generateMutation.error?.message}
-                onBack={() => setStep(2)}
+                onBack={() => void handleCommunityBack()}
+                initialValues={communityFormValues}
+                onValuesChange={setCommunityFormValues}
+                saveStatus={communitySaveStatus}
+                communityProfileUpdatedAt={communityProfileQuery.data?.updated_at}
               />
             </motion.div>
+          )}
+
+          {step === 3 && requirements && !communityFormValues && (
+            <Card>
+              <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading your Community Profile...
+              </CardContent>
+            </Card>
           )}
 
           {/* Step 4: Report */}

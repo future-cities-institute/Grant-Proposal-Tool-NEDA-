@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useForm, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,28 +16,28 @@ import { AlertCircle, ChevronDown, FileText, Loader2 } from "lucide-react";
 const requiredText = (label: string) => z.string().trim().min(1, `${label} is required`);
 
 const schema = z.object({
-  community_name: requiredText("Community name"),
-  region: requiredText("Region / Province"),
+  community_name: z.string(),
+  region: z.string(),
   local_priority: requiredText("Local priority"),
-  legal_name: requiredText("Legal applicant name"),
-  operating_name: requiredText("Operating name"),
-  applicant_type: requiredText("Applicant type"),
-  applicant_profile: requiredText("Applicant profile / mandate"),
-  registration_number: requiredText("CRA/business/registration number or N/A"),
-  year_established: requiredText("Year established or To confirm"),
-  contact_name: requiredText("Primary contact name"),
-  contact_title: requiredText("Primary contact title"),
-  contact_email: requiredText("Primary contact email"),
-  contact_phone: requiredText("Primary contact phone"),
-  mailing_address: requiredText("Mailing address"),
-  website: requiredText("Website or N/A"),
-  indigenous_communities: requiredText("Indigenous community or communities"),
-  population_served: requiredText("Population or service population"),
-  demographic_context: requiredText("Demographic context"),
-  existing_services: requiredText("Existing services"),
-  service_gaps: requiredText("Service gaps"),
-  remoteness_context: requiredText("Geographic/remoteness context"),
-  governance_context: requiredText("Governance context"),
+  legal_name: z.string(),
+  operating_name: z.string(),
+  applicant_type: z.string(),
+  applicant_profile: z.string(),
+  registration_number: z.string(),
+  year_established: z.string(),
+  contact_name: z.string(),
+  contact_title: z.string(),
+  contact_email: z.string(),
+  contact_phone: z.string(),
+  mailing_address: z.string(),
+  website: z.string(),
+  indigenous_communities: z.string(),
+  population_served: z.string(),
+  demographic_context: z.string(),
+  existing_services: z.string(),
+  service_gaps: z.string(),
+  remoteness_context: z.string(),
+  governance_context: z.string(),
   project_title: requiredText("Project title"),
   project_type: requiredText("Project type"),
   project_stage: requiredText("Project stage"),
@@ -49,7 +50,7 @@ const schema = z.object({
   staffing_plan: requiredText("Staffing/team roles"),
   project_management_approach: requiredText("Project management approach"),
   challenges: requiredText("Key challenges"),
-  strengths: requiredText("Community strengths"),
+  strengths: z.string(),
   partners: requiredText("Partners"),
   target_beneficiaries: requiredText("Who benefits"),
   direct_beneficiaries: requiredText("Direct beneficiaries"),
@@ -66,8 +67,8 @@ const schema = z.object({
   elders_involvement: requiredText("Elders involvement or N/A"),
   knowledge_keepers_involvement: requiredText("Knowledge Keepers involvement or N/A"),
   youth_involvement: requiredText("Youth involvement or N/A"),
-  data_governance: requiredText("Data governance / OCAP or N/A"),
-  cultural_safety: requiredText("Cultural safety considerations or N/A"),
+  data_governance: z.string(),
+  cultural_safety: z.string(),
   evidence_note: requiredText("Evidence or supporting data"),
   why_now: requiredText("Why now"),
   requested_budget: z.coerce.number().min(10000).max(5_000_000),
@@ -101,7 +102,7 @@ export type CommunityFormValues = z.infer<typeof schema>;
 const selectClassName =
   "flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
-const blankValues: CommunityFormValues = {
+export const blankCommunityFormValues: CommunityFormValues = {
   community_name: "",
   region: "",
   local_priority: "",
@@ -312,16 +313,6 @@ const demoValues: CommunityFormValues = {
     "Supporting notes: Council discussions identified water reliability as a priority for residents and community facilities. Public works staff report that aging components, shipping delays, and limited local maintenance capacity contribute to service interruptions. Regional advisors have indicated that early procurement, operator training, and phased implementation will reduce delivery risk. Community feedback emphasizes reliable access for Elders, families, health services, and public facilities.",
 };
 
-const applicantTypeOptions = [
-  "Indigenous government or Nation",
-  "Band council",
-  "Tribal council or regional Indigenous organization",
-  "Indigenous non-profit or community organization",
-  "Indigenous municipal or local government",
-  "Municipality or non-Indigenous partner with Indigenous lead",
-  "Other eligible applicant",
-];
-
 const projectTypeOptions = [
   "Community infrastructure",
   "Housing or land use planning",
@@ -462,11 +453,19 @@ export function CommunityForm({
   isSubmitting,
   error,
   onBack,
+  initialValues,
+  onValuesChange,
+  saveStatus = "idle",
+  communityProfileUpdatedAt,
 }: {
   onSubmit: (values: CommunityProfile & { requested_budget: number }) => void;
   isSubmitting: boolean;
   error?: string;
   onBack: () => void;
+  initialValues?: CommunityFormValues | null;
+  onValuesChange?: (values: CommunityFormValues) => void;
+  saveStatus?: "idle" | "saving" | "saved" | "error";
+  communityProfileUpdatedAt?: string | null;
 }) {
   const [supportingDocNames, setSupportingDocNames] = useState<string[]>([]);
   const [supportingDocError, setSupportingDocError] = useState("");
@@ -485,11 +484,18 @@ export function CommunityForm({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<CommunityFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: blankValues,
+    defaultValues: initialValues || blankCommunityFormValues,
   });
+
+  useEffect(() => {
+    if (!onValuesChange) return;
+    const subscription = watch((values) => onValuesChange(values as CommunityFormValues));
+    return () => subscription.unsubscribe();
+  }, [onValuesChange, watch]);
 
   const renderError = (name: Path<CommunityFormValues>) =>
     errors[name] ? <p className="text-sm text-destructive">{errors[name]?.message}</p> : null;
@@ -626,9 +632,9 @@ export function CommunityForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Community & project info</CardTitle>
+        <CardTitle>Application-specific information</CardTitle>
         <CardDescription>
-          Complete the intake so generated answers have enough verified context. Use N/A or To confirm where a required field does not apply.
+          Your saved Community Profile supplies reusable context. Complete only the project and application details below, using N/A or To confirm where needed.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -643,55 +649,22 @@ export function CommunityForm({
           }, expandSectionsWithErrors)}
           className="space-y-6"
         >
-          {renderSectionCard(
-            "applicant",
-            "Applicant Details",
-            "Legal identity, eligibility, and contact information.",
-            <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {renderInput("legal_name", "Legal applicant name", "Enter the legal name used on the application.")}
-              {renderInput("operating_name", "Operating name", "Enter operating name, or N/A if same as legal name.")}
-              {renderSelect("applicant_type", "Applicant type", applicantTypeOptions)}
-              {renderInput("registration_number", "CRA/business/registration number", "Enter number, N/A, or To confirm.")}
-              {renderInput("year_established", "Year established", "Enter year established, N/A, or To confirm.")}
-              {renderInput("website", "Website", "Enter website, public profile, or N/A.")}
-              {renderInput("contact_name", "Primary contact name", "Enter contact name.")}
-              {renderInput("contact_title", "Primary contact title", "Enter contact title.")}
-              {renderInput("contact_email", "Primary contact email", "Enter contact email.", "email")}
-              {renderInput("contact_phone", "Primary contact phone", "Enter contact phone.", "tel")}
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-foreground">
+                  Community Profile: {initialValues?.community_name || initialValues?.legal_name || "Not completed"}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Saved applicant and community details will be included in this proposal snapshot.
+                  {communityProfileUpdatedAt ? ` Last updated ${new Date(communityProfileUpdatedAt).toLocaleDateString()}.` : ""}
+                </p>
+              </div>
+              <Link href="/account" target="_blank">
+                <Button type="button" variant="outline">Review Community Profile</Button>
+              </Link>
             </div>
-            {renderTextarea(
-              "applicant_profile",
-              "Applicant profile / mandate",
-              "Describe who the applicant is, its mandate, who it serves, relevant experience, and why it is the right lead.",
-              4
-            )}
-            {renderTextarea("mailing_address", "Mailing address", "Enter mailing address or To confirm.", 2)}
-            </>
-          )}
-
-          {renderSectionCard(
-            "community",
-            "Community Context",
-            "Community profile, need, services, strengths, and local context.",
-            <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {renderInput("community_name", "Community name", "Enter community name.")}
-              {renderInput("region", "Region / Province", "Enter province, territory, or region.")}
-            </div>
-            {renderTextarea("indigenous_communities", "Indigenous community or communities", "Name the Indigenous community, Nation, or communities involved.")}
-            {renderTextarea("population_served", "Population or service population", "Enter population, service area, or To confirm.", 2)}
-            {renderTextarea("demographic_context", "Demographic context", "Describe priority groups, age groups, language/cultural context, or N/A.", 3)}
-            {renderTextarea("existing_services", "Existing services", "Describe current services/programs/infrastructure related to this project.", 3)}
-            {renderTextarea("service_gaps", "Service gaps", "Describe gaps, constraints, waitlists, disruptions, unmet needs, or missing capacity.", 3)}
-            {renderTextarea("remoteness_context", "Geographic/remoteness context", "Describe remoteness, access, climate, shipping, labour, or logistics context.", 3)}
-            {renderTextarea("governance_context", "Governance context", "Describe local governance, leadership, approvals, or decision-making context.", 3)}
-            {renderTextarea("local_priority", "Local priority", "Describe the top local priority this project addresses and why it matters now.", 3)}
-            {renderTextarea("challenges", "Key challenges", "Include specific examples of the biggest challenges the community is facing.", 3)}
-            {renderTextarea("strengths", "Community strengths", "Describe assets, existing capacity, relationships, and readiness factors.", 3)}
-            {renderTextarea("partners", "Partners", "List partner organizations and each partner's role. Enter N/A if none.", 3)}
-            </>
-          )}
+          </div>
 
           {renderSectionCard(
             "project",
@@ -708,6 +681,9 @@ export function CommunityForm({
               {renderInput("total_project_cost", "Total project cost ($)", "Enter total project cost, or 0 if unknown.", "number")}
             </div>
             {renderTextarea("project_summary", "Project summary", "Briefly describe what the project will do and what will change.", 3)}
+            {renderTextarea("local_priority", "Application priority", "Describe the priority this project addresses and why it matters for this application.", 3)}
+            {renderTextarea("challenges", "Project-specific challenges", "Include specific examples of the challenges this project will address.", 3)}
+            {renderTextarea("partners", "Project partners", "List partner organizations and each partner's role. Enter N/A if none.", 3)}
             {renderTextarea("project_objectives", "Project objectives", "List the main objectives the project is trying to achieve.", 3)}
             {renderTextarea("project_activities", "Key activities and deliverables", "List the main activities, deliverables, and workplan steps.", 4)}
             {renderTextarea("expected_outputs", "Expected outputs / deliverables", "List concrete outputs such as reports, installed components, training, plans, records, or other deliverables.", 3)}
@@ -729,8 +705,6 @@ export function CommunityForm({
             {renderTextarea("elders_involvement", "Elders involvement", "Describe Elders involvement, N/A, or To confirm.", 2)}
             {renderTextarea("knowledge_keepers_involvement", "Knowledge Keepers involvement", "Describe Knowledge Keepers involvement, N/A, or To confirm.", 2)}
             {renderTextarea("youth_involvement", "Youth involvement", "Describe Youth involvement, N/A, or To confirm.", 2)}
-            {renderTextarea("data_governance", "Data governance / OCAP", "Describe data ownership/control/access/possession approach, N/A, or To confirm.", 3)}
-            {renderTextarea("cultural_safety", "Cultural safety considerations", "Describe language, accessibility, protocol, privacy, trauma-informed, or N/A.", 3)}
             </>
           )}
 
@@ -842,6 +816,16 @@ export function CommunityForm({
                 "Generate proposal"
               )}
             </Button>
+            {saveStatus !== "idle" && (
+              <p
+                className={`self-center text-sm ${saveStatus === "error" ? "text-destructive" : "text-muted-foreground"}`}
+                role="status"
+              >
+                {saveStatus === "saving" && "Saving draft..."}
+                {saveStatus === "saved" && "Draft saved"}
+                {saveStatus === "error" && "Draft could not be saved. Your entries remain in this form."}
+              </p>
+            )}
           </div>
         </form>
       </CardContent>

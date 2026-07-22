@@ -393,6 +393,17 @@ export type SavedProposal = {
   prompt_coverage?: Record<string, PromptCoverageSection> | null;
   validation?: ComplianceSummary | null;
   final_sections?: DraftSection[] | null;
+  community_profile_id?: string | null;
+  community_profile_snapshot?: Partial<CommunityProfile> | null;
+  application_details?: Partial<CommunityProfile> | null;
+};
+
+export type CommunityProfileRecord = {
+  id: string;
+  user_id: string;
+  profile: Partial<CommunityProfile>;
+  created_at: string;
+  updated_at: string;
 };
 
 export type SavedProposalInput = Partial<
@@ -412,6 +423,9 @@ export type SavedProposalInput = Partial<
     | "validation"
     | "final_sections"
     | "last_exported_at"
+    | "community_profile_id"
+    | "community_profile_snapshot"
+    | "application_details"
   >
 >;
 
@@ -436,6 +450,31 @@ export async function listSavedProposals(): Promise<SavedProposal[]> {
   }
   const data = await res.json();
   return data.proposals || [];
+}
+
+export async function getCommunityProfile(): Promise<CommunityProfileRecord | null> {
+  const res = await fetch(`${API_BASE}/api/community-profile`, {
+    headers: await authHeaders(),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load community profile");
+  }
+  return res.json();
+}
+
+export async function saveCommunityProfile(profile: Partial<CommunityProfile>): Promise<CommunityProfileRecord> {
+  const res = await fetch(`${API_BASE}/api/community-profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ profile }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to save community profile");
+  }
+  return res.json();
 }
 
 export async function createSavedProposal(params: SavedProposalInput): Promise<SavedProposal> {

@@ -99,6 +99,19 @@ def init_workspace_store() -> None:
         _run(
             conn,
             """
+            CREATE TABLE IF NOT EXISTS community_profiles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                profile_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """,
+        )
+        _run(
+            conn,
+            """
             CREATE TABLE IF NOT EXISTS proposals (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -115,6 +128,9 @@ def init_workspace_store() -> None:
                 prompt_coverage_json TEXT,
                 validation_json TEXT,
                 final_sections_json TEXT,
+                community_profile_id TEXT,
+                community_profile_snapshot_json TEXT,
+                application_details_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_exported_at TEXT,
@@ -123,6 +139,9 @@ def init_workspace_store() -> None:
             """,
         )
         _ensure_column(conn, "proposals", "structured_answers_json", "TEXT")
+        _ensure_column(conn, "proposals", "community_profile_id", "TEXT")
+        _ensure_column(conn, "proposals", "community_profile_snapshot_json", "TEXT")
+        _ensure_column(conn, "proposals", "application_details_json", "TEXT")
         _run(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_proposals_user_updated ON proposals(user_id, updated_at DESC)",
@@ -160,6 +179,38 @@ def get_or_create_user(user_id: str, email: str, name: str) -> dict[str, Any]:
     return {"id": user_id, "email": email, "name": name, "created_at": now, "updated_at": now}
 
 
+def get_community_profile(user_id: str) -> dict[str, Any] | None:
+    init_workspace_store()
+    with _connect() as conn:
+        row = _run(conn, "SELECT * FROM community_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    return _row_to_community_profile(row) if row else None
+
+
+def upsert_community_profile(user_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+    init_workspace_store()
+    existing = get_community_profile(user_id)
+    now = _now()
+    if existing:
+        with _connect() as conn:
+            _run(
+                conn,
+                "UPDATE community_profiles SET profile_json = ?, updated_at = ? WHERE user_id = ?",
+                (_json_dump(profile), now, user_id),
+            )
+            row = _run(conn, "SELECT * FROM community_profiles WHERE user_id = ?", (user_id,)).fetchone()
+        return _row_to_community_profile(row)
+
+    profile_id = uuid4().hex[:12]
+    with _connect() as conn:
+        _run(
+            conn,
+            "INSERT INTO community_profiles (id, user_id, profile_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (profile_id, user_id, _json_dump(profile), now, now),
+        )
+        row = _run(conn, "SELECT * FROM community_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    return _row_to_community_profile(row)
+
+
 def list_proposals(user_id: str) -> list[dict[str, Any]]:
     init_workspace_store()
     with _connect() as conn:
@@ -184,9 +235,10 @@ def create_proposal(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                 id, user_id, title, community_name, grant_name, status, current_step,
                 requirements_json, profile_json, draft_json, enhanced_json,
                 structured_answers_json, prompt_coverage_json, validation_json, final_sections_json,
+                community_profile_id, community_profile_snapshot_json, application_details_json,
                 created_at, updated_at, last_exported_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proposal_id,
@@ -204,6 +256,9 @@ def create_proposal(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                 _json_dump(payload.get("prompt_coverage")),
                 _json_dump(payload.get("validation")),
                 _json_dump(payload.get("final_sections")),
+                payload.get("community_profile_id"),
+                _json_dump(payload.get("community_profile_snapshot")),
+                _json_dump(payload.get("application_details")),
                 now,
                 now,
                 payload.get("last_exported_at"),
@@ -253,6 +308,7 @@ def update_proposal(user_id: str, proposal_id: str, updates: dict[str, Any]) -> 
             SET title = ?, community_name = ?, grant_name = ?, status = ?, current_step = ?,
                 requirements_json = ?, profile_json = ?, draft_json = ?, enhanced_json = ?,
                 structured_answers_json = ?, prompt_coverage_json = ?, validation_json = ?, final_sections_json = ?,
+                community_profile_id = ?, community_profile_snapshot_json = ?, application_details_json = ?,
                 updated_at = ?, last_exported_at = ?
             WHERE id = ? AND user_id = ?
             """,
@@ -270,6 +326,9 @@ def update_proposal(user_id: str, proposal_id: str, updates: dict[str, Any]) -> 
                 _json_dump(merged.get("prompt_coverage")),
                 _json_dump(merged.get("validation")),
                 _json_dump(merged.get("final_sections")),
+                merged.get("community_profile_id"),
+                _json_dump(merged.get("community_profile_snapshot")),
+                _json_dump(merged.get("application_details")),
                 now,
                 merged.get("last_exported_at"),
                 proposal_id,
@@ -315,6 +374,16 @@ def _row_to_user(row: Any) -> dict[str, Any]:
     }
 
 
+def _row_to_community_profile(row: Any) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "profile": _json_load(row["profile_json"]) or {},
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 def _row_to_proposal(row: Any, *, include_payload: bool) -> dict[str, Any]:
     proposal = {
         "id": row["id"],
@@ -339,6 +408,9 @@ def _row_to_proposal(row: Any, *, include_payload: bool) -> dict[str, Any]:
                 "prompt_coverage": _json_load(row["prompt_coverage_json"]),
                 "validation": _json_load(row["validation_json"]),
                 "final_sections": _json_load(row["final_sections_json"]),
+                "community_profile_id": row["community_profile_id"],
+                "community_profile_snapshot": _json_load(row["community_profile_snapshot_json"]),
+                "application_details": _json_load(row["application_details_json"]),
             }
         )
     return proposal

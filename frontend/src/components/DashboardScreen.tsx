@@ -10,6 +10,7 @@ import {
   FileText,
   Plus,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/Providers";
@@ -138,6 +139,23 @@ export function DashboardScreen() {
           </section>
 
           <aside className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Users className="h-5 w-5" />
+                </div>
+                <CardTitle className="text-base">Community Profile</CardTitle>
+                <CardDescription>
+                  Save applicant and community details once so new proposals only ask for application-specific information.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/account">
+                  <Button variant="outline" className="w-full">Review Community Profile</Button>
+                </Link>
+              </CardContent>
+            </Card>
+
             <Card className="border-primary/25 bg-primary/5">
               <CardHeader>
                 <CardTitle className="text-base">Main workflow</CardTitle>

@@ -50,11 +50,13 @@ from backend.app.workspace_store import (
     create_proposal as store_create_proposal,
     delete_proposal as store_delete_proposal,
     get_or_create_user,
+    get_community_profile as store_get_community_profile,
     get_proposal as store_get_proposal,
     init_workspace_store,
     list_proposals as store_list_proposals,
     mark_proposal_exported,
     update_proposal as store_update_proposal,
+    upsert_community_profile as store_upsert_community_profile,
 )
 
 logger = logging.getLogger("uvicorn.error")
@@ -253,6 +255,9 @@ class ProposalRecordRequest(BaseModel):
     validation: Optional[Dict[str, Any]] = None
     final_sections: Optional[List[Dict[str, Any]]] = None
     last_exported_at: Optional[str] = None
+    community_profile_id: Optional[str] = None
+    community_profile_snapshot: Optional[Dict[str, Any]] = None
+    application_details: Optional[Dict[str, Any]] = None
 
 
 class ProposalRecord(ProposalRecordRequest):
@@ -269,6 +274,17 @@ class ProposalRecord(ProposalRecordRequest):
 
 class ProposalListResponse(BaseModel):
     proposals: List[ProposalRecord]
+
+
+class CommunityProfileRequest(BaseModel):
+    profile: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CommunityProfileRecord(CommunityProfileRequest):
+    id: str
+    user_id: str
+    created_at: str
+    updated_at: str
 
 
 def current_user(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
@@ -512,6 +528,19 @@ def health():
 @app.get("/api/me", response_model=WorkspaceUser)
 def get_me(user: Dict[str, Any] = Depends(current_user)):
     return user
+
+
+@app.get("/api/community-profile", response_model=CommunityProfileRecord)
+def get_saved_community_profile(user: Dict[str, Any] = Depends(current_user)):
+    profile = store_get_community_profile(user["id"])
+    if not profile:
+        raise HTTPException(status_code=404, detail="Community profile not found.")
+    return profile
+
+
+@app.put("/api/community-profile", response_model=CommunityProfileRecord)
+def save_community_profile(body: CommunityProfileRequest, user: Dict[str, Any] = Depends(current_user)):
+    return store_upsert_community_profile(user["id"], body.profile)
 
 
 @app.get("/api/proposals", response_model=ProposalListResponse)
