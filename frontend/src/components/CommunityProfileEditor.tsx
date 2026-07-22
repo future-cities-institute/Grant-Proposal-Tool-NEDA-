@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,25 +58,43 @@ export function CommunityProfileEditor() {
   const hydratedRef = useRef(false);
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestSaveRef = useRef(0);
+  const lastSavedValuesRef = useRef("");
 
   useEffect(() => {
     if (profileQuery.isLoading || hydratedRef.current) return;
-    setValues(profileQuery.data?.profile || {});
+    const loadedValues = profileQuery.data?.profile || {};
+    setValues(loadedValues);
     setSavedRecord(profileQuery.data || null);
+    lastSavedValuesRef.current = JSON.stringify(loadedValues);
+    setSaveStatus("idle");
     hydratedRef.current = true;
   }, [profileQuery.data, profileQuery.isLoading]);
 
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    setSaveStatus("saving");
-    const timeoutId = window.setTimeout(() => {
+  const persistValues = useCallback(
+    (nextValues: ProfileValues) => {
+      const serializedValues = JSON.stringify(nextValues);
+      if (!hydratedRef.current || serializedValues === lastSavedValuesRef.current) {
+        return Promise.resolve(null);
+      }
+
       const saveId = latestSaveRef.current + 1;
       latestSaveRef.current = saveId;
-      const task = saveChainRef.current.catch(() => undefined).then(() => saveCommunityProfile(values));
+      setSaveStatus("saving");
+      const task = saveChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const record = await saveCommunityProfile(nextValues);
+          const responseMatches = Object.entries(nextValues).every(
+            ([key, value]) => record.profile[key as ProfileKey] === value
+          );
+          if (!responseMatches) throw new Error("The saved profile did not match the submitted values.");
+          return record;
+        });
       saveChainRef.current = task;
       void task.then(
         (record) => {
           setSavedRecord(record);
+          lastSavedValuesRef.current = JSON.stringify(record.profile);
           queryClient.setQueryData(["community-profile"], record);
           if (latestSaveRef.current === saveId) setSaveStatus("saved");
         },
@@ -83,11 +102,23 @@ export function CommunityProfileEditor() {
           if (latestSaveRef.current === saveId) setSaveStatus("error");
         }
       );
+      return task;
+    },
+    [queryClient]
+  );
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (JSON.stringify(values) === lastSavedValuesRef.current) return;
+    setSaveStatus("saving");
+    const timeoutId = window.setTimeout(() => {
+      void persistValues(values);
     }, 1200);
     return () => window.clearTimeout(timeoutId);
-  }, [queryClient, values]);
+  }, [persistValues, values]);
 
   const updateValue = (key: ProfileKey, value: string) => {
+    setSaveStatus("saving");
     setValues((current) => ({ ...current, [key]: value }));
   };
 
@@ -131,7 +162,7 @@ export function CommunityProfileEditor() {
           <p className="text-xs text-muted-foreground">Last saved {new Date(savedRecord.updated_at).toLocaleString()}</p>
         )}
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6" onBlur={() => void persistValues(values)}>
         <div className="grid gap-4 sm:grid-cols-2">
           {shortFields.map((field) => (
             <div key={field.key} className="space-y-2">
@@ -159,6 +190,14 @@ export function CommunityProfileEditor() {
               />
             </div>
           ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+          <Button type="button" onClick={() => void persistValues(values)} disabled={saveStatus === "saving"}>
+            {saveStatus === "saving" ? "Saving..." : "Save Community Profile"}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Changes also save automatically after you pause or leave a field.
+          </p>
         </div>
       </CardContent>
     </Card>
