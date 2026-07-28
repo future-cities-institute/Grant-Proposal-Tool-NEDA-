@@ -25,6 +25,7 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
   const proposal = proposalQuery.data;
   const versions = buildVersionHistory(proposal);
   const exportSections = buildExportSections(proposal);
+  const hasExportableDraft = exportSections.length > 0;
   const exportMutation = useMutation({
     mutationFn: async () => {
       if (!proposal || exportSections.length === 0) throw new Error("This proposal does not have an exportable draft yet.");
@@ -88,11 +89,10 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
             </Link>
             <Button
               onClick={() => exportMutation.mutate()}
-              disabled={!proposal || exportSections.length === 0 || exportMutation.isPending}
-              title={exportSections.length === 0 ? "Generate and review a draft before exporting." : undefined}
+              disabled={!proposal || !hasExportableDraft || exportMutation.isPending}
             >
               {exportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              {exportMutation.isPending ? "Preparing PDF..." : "Download latest PDF"}
+              {exportMutation.isPending ? "Preparing PDF..." : hasExportableDraft ? "Download latest PDF" : "No draft available"}
             </Button>
           </div>
         </div>
@@ -102,6 +102,15 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
             <AlertCircle className="h-4 w-4" />
             {(exportMutation.error || duplicateMutation.error)?.message || "The action could not be completed."}
           </p>
+        )}
+
+        {proposal && !hasExportableDraft && (
+          <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-foreground">
+            <p className="font-medium">This record contains a reviewed grant package, but no generated proposal draft yet.</p>
+            <p className="mt-1 text-muted-foreground">
+              Select Continue editing, complete the application details, and generate the report before downloading a proposal PDF.
+            </p>
+          </div>
         )}
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -156,8 +165,12 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
                   <span className="font-medium text-foreground">{formatStatus(proposal?.status || "draft")}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span>Sections</span>
+                  <span>Draft sections</span>
                   <span className="font-medium text-foreground">{proposal?.final_sections?.length || proposal?.draft?.sections?.length || 0}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>Extracted grant sections</span>
+                  <span className="font-medium text-foreground">{proposal?.requirements?.sections?.length || 0}</span>
                 </div>
               </CardContent>
             </Card>
