@@ -526,6 +526,18 @@ export async function markSavedProposalExported(proposalId: string): Promise<Sav
   return res.json();
 }
 
+export async function duplicateSavedProposal(proposalId: string): Promise<SavedProposal> {
+  const res = await fetch(`${API_BASE}/api/proposals/${proposalId}/duplicate`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to duplicate proposal");
+  }
+  return res.json();
+}
+
 export async function parseGrant(file: File): Promise<{
   requirements: Requirements;
   raw_text: string;

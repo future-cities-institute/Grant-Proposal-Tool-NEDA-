@@ -343,6 +343,39 @@ def update_proposal(user_id: str, proposal_id: str, updates: dict[str, Any]) -> 
     return _row_to_proposal(row, include_payload=True)
 
 
+def duplicate_proposal(user_id: str, proposal_id: str) -> dict[str, Any] | None:
+    existing = get_proposal(user_id, proposal_id)
+    if not existing:
+        return None
+    copy_payload = {
+        key: existing.get(key)
+        for key in (
+            "community_name",
+            "grant_name",
+            "current_step",
+            "requirements",
+            "profile",
+            "draft",
+            "enhanced",
+            "structured_answers",
+            "prompt_coverage",
+            "validation",
+            "final_sections",
+            "community_profile_id",
+            "community_profile_snapshot",
+            "application_details",
+        )
+    }
+    copy_payload.update(
+        {
+            "title": f"{existing.get('title') or 'Untitled Proposal'} - Copy",
+            "status": "ready_to_export" if existing.get("final_sections") else "draft_copy",
+            "last_exported_at": None,
+        }
+    )
+    return create_proposal(user_id, copy_payload)
+
+
 def delete_proposal(user_id: str, proposal_id: str) -> bool:
     init_workspace_store()
     with _connect() as conn:

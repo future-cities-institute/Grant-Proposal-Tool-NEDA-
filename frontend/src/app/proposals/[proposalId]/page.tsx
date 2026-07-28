@@ -1,20 +1,65 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, Download, FileText, History, PencilLine, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, ArrowLeft, CalendarClock, Download, FileText, History, Loader2, PencilLine, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getSavedProposal } from "@/lib/api";
+import {
+  duplicateSavedProposal,
+  exportDraftPdf,
+  getSavedProposal,
+  markSavedProposalExported,
+  type DraftSection,
+} from "@/lib/api";
 
 export default function ProposalDetailPage({ params }: { params: { proposalId: string } }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const proposalQuery = useQuery({
     queryKey: ["saved-proposal", params.proposalId],
     queryFn: () => getSavedProposal(params.proposalId),
   });
   const proposal = proposalQuery.data;
   const versions = buildVersionHistory(proposal);
+  const exportSections = buildExportSections(proposal);
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      if (!proposal || exportSections.length === 0) throw new Error("This proposal does not have an exportable draft yet.");
+      const profile = { ...(proposal.community_profile_snapshot || {}), ...(proposal.application_details || {}), ...(proposal.profile || {}) };
+      return exportDraftPdf({
+        grant_name: proposal.grant_name || proposal.requirements?.grant_name || "",
+        community_name: proposal.community_name || profile.community_name || "",
+        region: profile.region || "",
+        local_priority: profile.local_priority || "",
+        requested_budget: profile.requested_budget,
+        sections: exportSections,
+      });
+    },
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeDownloadName(proposal?.title || "grant_proposal")}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      void markSavedProposalExported(params.proposalId).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["saved-proposal", params.proposalId] });
+        void queryClient.invalidateQueries({ queryKey: ["saved-proposals"] });
+      });
+    },
+  });
+  const duplicateMutation = useMutation({
+    mutationFn: () => duplicateSavedProposal(params.proposalId),
+    onSuccess: (copy) => {
+      void queryClient.invalidateQueries({ queryKey: ["saved-proposals"] });
+      router.push(`/proposals/${copy.id}`);
+    },
+  });
 
   return (
     <AppShell>
@@ -35,18 +80,29 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/proposal">
+            <Link href={`/proposal?proposalId=${params.proposalId}`}>
               <Button variant="outline">
                 <PencilLine className="mr-2 h-4 w-4" />
-                Resume Builder
+                Continue editing
               </Button>
             </Link>
-            <Button>
-              <Download className="mr-2 h-4 w-4" />
-              Export Latest
+            <Button
+              onClick={() => exportMutation.mutate()}
+              disabled={!proposal || exportSections.length === 0 || exportMutation.isPending}
+              title={exportSections.length === 0 ? "Generate and review a draft before exporting." : undefined}
+            >
+              {exportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {exportMutation.isPending ? "Preparing PDF..." : "Download latest PDF"}
             </Button>
           </div>
         </div>
+
+        {(exportMutation.isError || duplicateMutation.isError) && (
+          <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            {(exportMutation.error || duplicateMutation.error)?.message || "The action could not be completed."}
+          </p>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <Card>
@@ -117,9 +173,14 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button variant="outline" className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Duplicate Proposal
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => duplicateMutation.mutate()}
+                  disabled={!proposal || duplicateMutation.isPending}
+                >
+                  {duplicateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                  {duplicateMutation.isPending ? "Creating copy..." : "Create a copy"}
                 </Button>
               </CardContent>
             </Card>
@@ -128,6 +189,19 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
       </div>
     </AppShell>
   );
+}
+
+function buildExportSections(proposal?: Awaited<ReturnType<typeof getSavedProposal>>): DraftSection[] {
+  if (!proposal) return [];
+  if (proposal.final_sections?.length) return proposal.final_sections;
+  return (proposal.draft?.sections || []).map((section) => ({
+    ...section,
+    body: proposal.enhanced?.[section.key] || section.body,
+  }));
+}
+
+function safeDownloadName(value: string) {
+  return value.trim().replace(/[^a-z0-9-_]+/gi, "_").replace(/^_+|_+$/g, "") || "grant_proposal";
 }
 
 function buildVersionHistory(proposal?: Awaited<ReturnType<typeof getSavedProposal>>) {

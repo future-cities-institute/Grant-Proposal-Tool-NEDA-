@@ -49,6 +49,7 @@ from backend.app.auth import user_from_authorization_header
 from backend.app.workspace_store import (
     create_proposal as store_create_proposal,
     delete_proposal as store_delete_proposal,
+    duplicate_proposal as store_duplicate_proposal,
     get_or_create_user,
     get_community_profile as store_get_community_profile,
     get_proposal as store_get_proposal,
@@ -574,6 +575,14 @@ def update_saved_proposal(proposal_id: str, body: ProposalRecordRequest, user: D
 @app.post("/api/proposals/{proposal_id}/exported", response_model=ProposalRecord)
 def mark_saved_proposal_exported(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
     proposal = mark_proposal_exported(user["id"], proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return proposal
+
+
+@app.post("/api/proposals/{proposal_id}/duplicate", response_model=ProposalRecord)
+def duplicate_saved_proposal(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
+    proposal = store_duplicate_proposal(user["id"], proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found.")
     return proposal

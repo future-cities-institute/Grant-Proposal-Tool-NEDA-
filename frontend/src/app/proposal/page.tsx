@@ -33,6 +33,8 @@ import {
   updateSavedProposal,
   markSavedProposalExported,
   getCommunityProfile,
+  getSavedProposal,
+  type SavedProposal,
 } from "@/lib/api";
 import {
   CommunityForm,
@@ -84,8 +86,24 @@ function applicationDetailsFrom(values: CommunityFormValues): Partial<CommunityP
   return Object.fromEntries(Object.entries(values).filter(([key]) => !reusable.has(key))) as Partial<CommunityProfile>;
 }
 
-export default function ProposalPage() {
+function safestSavedStep(proposal: SavedProposal): number {
+  const hasRequirements = Boolean(proposal.requirements);
+  const hasProfile = Boolean(proposal.profile || proposal.community_profile_snapshot);
+  if (hasRequirements && hasProfile && proposal.final_sections?.length) return 5;
+  if (hasRequirements && hasProfile && proposal.draft?.sections?.length) return 4;
+  if (hasRequirements && (proposal.application_details || proposal.profile)) return 3;
+  if (hasRequirements) return 2;
+  return 1;
+}
+
+export default function ProposalPage({ searchParams }: { searchParams?: { proposalId?: string } }) {
+  const requestedProposalId = searchParams?.proposalId || "";
   const communityProfileQuery = useQuery({ queryKey: ["community-profile"], queryFn: getCommunityProfile });
+  const savedProposalQuery = useQuery({
+    queryKey: ["saved-proposal", requestedProposalId],
+    queryFn: () => getSavedProposal(requestedProposalId),
+    enabled: Boolean(requestedProposalId),
+  });
   const [step, setStep] = useState(1);
   const [grantFile, setGrantFile] = useState<File | null>(null);
   const [requirements, setRequirements] = useState<Requirements | null>(null);
@@ -98,18 +116,50 @@ export default function ProposalPage() {
   const [finalSections, setFinalSections] = useState<DraftSection[]>([]);
   const [exportError, setExportError] = useState<string>("");
   const [proposalId, setProposalId] = useState<string | null>(null);
+  const [activeCommunityProfileId, setActiveCommunityProfileId] = useState<string | null>(null);
+  const [activeCommunityProfileSnapshot, setActiveCommunityProfileSnapshot] = useState<Partial<CommunityProfile>>({});
   const [communityFormValues, setCommunityFormValues] = useState<CommunityFormValues | null>(null);
   const [communitySaveStatus, setCommunitySaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const communitySaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestCommunitySaveRef = useRef(0);
+  const hydratedProposalRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (communityProfileQuery.isLoading || communityFormValues) return;
+    const reusableProfile = communityProfileQuery.data?.profile || {};
     setCommunityFormValues({
       ...blankCommunityFormValues,
-      ...(communityProfileQuery.data?.profile || {}),
+      ...reusableProfile,
     } as CommunityFormValues);
+    setActiveCommunityProfileId(communityProfileQuery.data?.id || null);
+    setActiveCommunityProfileSnapshot(reusableProfile);
   }, [communityFormValues, communityProfileQuery.data, communityProfileQuery.isLoading]);
+
+  useEffect(() => {
+    const saved = savedProposalQuery.data;
+    if (!requestedProposalId || !saved || hydratedProposalRef.current === saved.id) return;
+    const snapshot = saved.community_profile_snapshot || saved.profile || {};
+    const applicationDetails = saved.application_details || saved.profile || {};
+    const combinedProfile = { ...snapshot, ...applicationDetails } as CommunityProfile;
+    setProposalId(saved.id);
+    setRequirements(saved.requirements || null);
+    setProfile(saved.profile || (Object.keys(combinedProfile).length ? combinedProfile : null));
+    setDraft(saved.draft || null);
+    setEnhanced(saved.enhanced || null);
+    setStructuredAnswers(saved.structured_answers || {});
+    setPromptCoverage(saved.prompt_coverage || {});
+    setValidation(saved.validation || null);
+    setFinalSections(saved.final_sections || []);
+    setActiveCommunityProfileId(saved.community_profile_id || null);
+    setActiveCommunityProfileSnapshot(snapshot);
+    setCommunityFormValues({
+      ...blankCommunityFormValues,
+      ...snapshot,
+      ...applicationDetails,
+    } as CommunityFormValues);
+    setStep(safestSavedStep(saved));
+    hydratedProposalRef.current = saved.id;
+  }, [requestedProposalId, savedProposalQuery.data]);
 
   const saveCommunityDraft = useCallback(
     (values: CommunityFormValues) => {
@@ -123,9 +173,9 @@ export default function ProposalPage() {
         .then(() =>
           updateSavedProposal(proposalId, {
             application_details: applicationDetailsFrom(values),
-            community_profile_id: communityProfileQuery.data?.id || null,
-            community_profile_snapshot: communityProfileQuery.data?.profile || {},
-            community_name: communityProfileQuery.data?.profile.community_name || "",
+            community_profile_id: activeCommunityProfileId,
+            community_profile_snapshot: activeCommunityProfileSnapshot,
+            community_name: activeCommunityProfileSnapshot.community_name || "",
           })
         );
 
@@ -140,7 +190,7 @@ export default function ProposalPage() {
       );
       return saveTask;
     },
-    [communityProfileQuery.data, proposalId]
+    [activeCommunityProfileId, activeCommunityProfileSnapshot, proposalId]
   );
 
   useEffect(() => {
@@ -202,6 +252,8 @@ export default function ProposalPage() {
             status: "grant_parsed",
             current_step: 2,
             requirements: data.requirements,
+            community_profile_id: activeCommunityProfileId,
+            community_profile_snapshot: activeCommunityProfileSnapshot,
           });
           setProposalId(saved.id);
         } catch (error) {
@@ -287,7 +339,7 @@ export default function ProposalPage() {
     (formProfile: CommunityProfile & { requested_budget: number }) => {
       if (!requirements) return;
       const combinedProfile = {
-        ...(communityProfileQuery.data?.profile || {}),
+        ...activeCommunityProfileSnapshot,
         ...applicationDetailsFrom(formProfile as CommunityFormValues),
       } as CommunityProfile & { requested_budget: number };
       setProfile(combinedProfile);
@@ -296,8 +348,8 @@ export default function ProposalPage() {
         void updateSavedProposal(proposalId, {
           profile: combinedProfile,
           application_details: applicationDetailsFrom(formProfile as CommunityFormValues),
-          community_profile_id: communityProfileQuery.data?.id || null,
-          community_profile_snapshot: communityProfileQuery.data?.profile || {},
+          community_profile_id: activeCommunityProfileId,
+          community_profile_snapshot: activeCommunityProfileSnapshot,
           community_name: combinedProfile.community_name || "",
           status: "intake_completed",
           current_step: 3,
@@ -309,7 +361,7 @@ export default function ProposalPage() {
         budget: combinedProfile.requested_budget,
       });
     },
-    [communityProfileQuery.data, requirements, generateMutation, proposalId]
+    [activeCommunityProfileId, activeCommunityProfileSnapshot, requirements, generateMutation, proposalId]
   );
 
   const handleCommunityBack = useCallback(async () => {
@@ -322,6 +374,16 @@ export default function ProposalPage() {
     }
     setStep(2);
   }, [communityFormValues, proposalId, saveCommunityDraft]);
+
+  const handleSectionsNext = useCallback(() => {
+    setStep(3);
+    if (proposalId && requirements) {
+      void updateSavedProposal(proposalId, {
+        requirements,
+        current_step: 3,
+      });
+    }
+  }, [proposalId, requirements]);
 
   const handleSectionTitleChange = useCallback(
     (sectionKey: string, title: string) => {
@@ -375,6 +437,31 @@ export default function ProposalPage() {
 
   const progressPct = step === 5 ? 100 : ((step - 1) / 4) * 100;
 
+  if (requestedProposalId && savedProposalQuery.isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading saved proposal...
+        </p>
+      </div>
+    );
+  }
+
+  if (requestedProposalId && savedProposalQuery.isError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="w-full max-w-lg border-destructive/40">
+          <CardContent className="space-y-4 p-6">
+            <p className="flex items-center gap-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4" /> This saved proposal could not be loaded.
+            </p>
+            <Link href="/dashboard"><Button variant="outline">Return to dashboard</Button></Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
@@ -385,9 +472,9 @@ export default function ProposalPage() {
           </Link>
           <div className="flex-1">
             <h1 className="font-semibold text-foreground">Grant Proposal Builder</h1>
-            {grantFile && (
+            {(grantFile || savedProposalQuery.data) && (
               <p className="text-xs text-muted-foreground">
-                Improving: {grantFile.name}
+                Improving: {grantFile?.name || savedProposalQuery.data?.title}
               </p>
             )}
           </div>
@@ -522,7 +609,7 @@ export default function ProposalPage() {
             >
               <ProposalSections
                 requirements={requirements}
-                onNext={() => setStep(3)}
+                onNext={handleSectionsNext}
                 onBack={() => setStep(1)}
                 onSectionTitleChange={handleSectionTitleChange}
                 onSectionDelete={handleSectionDelete}
