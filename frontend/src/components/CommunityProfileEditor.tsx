@@ -59,6 +59,9 @@ export function CommunityProfileEditor() {
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestSaveRef = useRef(0);
   const lastSavedValuesRef = useRef("");
+  const hasSavedDetails = Object.values(savedRecord?.profile || {}).some(
+    (value) => typeof value === "string" ? value.trim().length > 0 : value !== null && value !== undefined
+  );
 
   useEffect(() => {
     if (profileQuery.isLoading || hydratedRef.current) return;
@@ -158,11 +161,17 @@ export function CommunityProfileEditor() {
             {saveStatus === "error" && <span className="flex items-center gap-2 text-destructive"><AlertCircle className="h-4 w-4" /> Save failed; your entries remain here.</span>}
           </div>
         </div>
-        {savedRecord?.updated_at && (
+        {savedRecord?.updated_at && hasSavedDetails && (
           <p className="text-xs text-muted-foreground">Last saved {new Date(savedRecord.updated_at).toLocaleString()}</p>
         )}
       </CardHeader>
       <CardContent className="space-y-6" onBlur={() => void persistValues(values)}>
+        {!hasSavedDetails && (
+          <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm">
+            <p className="font-medium text-foreground">No Community Profile details have been saved yet.</p>
+            <p className="mt-1 text-muted-foreground">Complete the reusable fields below, then select Save Community Profile.</p>
+          </div>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           {shortFields.map((field) => (
             <div key={field.key} className="space-y-2">

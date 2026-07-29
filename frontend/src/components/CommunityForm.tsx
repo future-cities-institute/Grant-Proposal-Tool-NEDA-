@@ -657,7 +657,9 @@ export function CommunityForm({
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Saved applicant and community details will be included in this proposal snapshot.
-                  {communityProfileUpdatedAt ? ` Last updated ${new Date(communityProfileUpdatedAt).toLocaleDateString()}.` : ""}
+                  {(initialValues?.community_name || initialValues?.legal_name) && communityProfileUpdatedAt
+                    ? ` Last updated ${new Date(communityProfileUpdatedAt).toLocaleDateString()}.`
+                    : ""}
                 </p>
               </div>
               <Link href="/account" target="_blank">

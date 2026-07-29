@@ -84,6 +84,7 @@ export function ReportView({
   const [issueInputs, setIssueInputs] = useState<Record<string, string>>({});
   const [freeformInstructions, setFreeformInstructions] = useState<Record<string, string>>({});
   const [guidedPreview, setGuidedPreview] = useState<GuidedRewritePreview>(null);
+  const [showAllGuidedIssues, setShowAllGuidedIssues] = useState(false);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const previousBodiesRef = useRef<Record<string, string>>({});
 
@@ -533,9 +534,15 @@ export function ReportView({
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Your proposal draft</h2>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-primary">Draft workspace</p>
+          <h2 className="mt-1 text-2xl font-bold">Review and improve your proposal</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {draft.meta?.community_name || "Community not set"} · {draft.meta?.grant_name || "Grant proposal"} · ${summaryBudget || "0"}
+          </p>
+        </div>
         <Link href="/dashboard">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -545,22 +552,55 @@ export function ReportView({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {draft.meta?.community_name} · {draft.meta?.grant_name} · ${summaryBudget}
-          </p>
+        <CardContent className="grid gap-4 p-4 sm:grid-cols-3">
+          <div>
+            <p className="text-2xl font-semibold text-foreground">{sections.length}</p>
+            <p className="text-xs text-muted-foreground">Proposal sections</p>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold text-foreground">{visibleGuidedIssues.length}</p>
+            <p className="text-xs text-muted-foreground">Open review items</p>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold text-foreground">
+              {sections.filter((section) => !guidedIssues.some((issue) => issue.sectionKey === section.key)).length}
+            </p>
+            <p className="text-xs text-muted-foreground">Sections without findings</p>
+          </div>
         </CardContent>
       </Card>
 
-      <Card className="border-primary/40 bg-primary/5">
-        <CardHeader>
-          <CardTitle className="text-base">Section editor</CardTitle>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Choose a section</CardTitle>
+          <p className="text-sm text-muted-foreground">Work on one section at a time. Issue counts update after edits are checked.</p>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Open any section below to edit text directly, ask AI for targeted changes, then apply only what you want.
+        <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {sections.map((section, index) => {
+            const issueCount = visibleGuidedIssues.filter((issue) => issue.sectionKey === section.key).length;
+            const isActive = section.key === (activeKey || sections[0]?.key);
+            return (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => jumpToSection(section.key)}
+                className={`rounded-lg border p-3 text-left transition ${
+                  isActive ? "border-primary/50 bg-primary/10" : "border-border bg-background/40 hover:bg-muted/40"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium text-foreground">{index + 1}. {section.title}</p>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    issueCount > 0
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  }`}>
+                    {issueCount > 0 ? issueCount : "✓"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -580,7 +620,7 @@ export function ReportView({
         </CardHeader>
         <CardContent className="space-y-3">
           {visibleGuidedIssues.length > 0 ? (
-            visibleGuidedIssues.slice(0, 10).map((issue) => {
+            visibleGuidedIssues.slice(0, showAllGuidedIssues ? visibleGuidedIssues.length : 4).map((issue) => {
               const status = issueStatuses[issue.id] || "open";
               return (
                 <div
@@ -626,18 +666,16 @@ export function ReportView({
               <Check className="h-4 w-4" /> No open guided-review issues.
             </p>
           )}
-          {visibleGuidedIssues.length > 10 && (
-            <p className="text-xs text-muted-foreground">Review a section to work through the remaining {visibleGuidedIssues.length - 10} issues.</p>
+          {visibleGuidedIssues.length > 4 && (
+            <Button size="sm" variant="outline" onClick={() => setShowAllGuidedIssues((current) => !current)}>
+              {showAllGuidedIssues ? "Show fewer issues" : `Show all ${visibleGuidedIssues.length} issues`}
+            </Button>
           )}
         </CardContent>
       </Card>
 
       <Card
-        className={
-          missingInfoSections.length > 0 || topQualityIssues.length > 0
-            ? "border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/10"
-            : "border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/10"
-        }
+        className="hidden"
       >
         <CardHeader>
           <CardTitle className="text-base">Top priorities</CardTitle>
@@ -717,7 +755,7 @@ export function ReportView({
       </Card>
 
       <div className="space-y-4">
-        {sections.map((sec) => {
+        {sections.filter((section) => section.key === (activeKey || sections[0]?.key)).map((sec) => {
           const state = sectionStates[sec.key];
           if (!state) return null;
           const isBusy = busyKey === sec.key;
@@ -1131,7 +1169,14 @@ export function ReportView({
         })}
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <details className="rounded-lg border border-border bg-muted/20">
+        <summary className="cursor-pointer select-none p-4 text-sm font-medium text-foreground">
+          Detailed review log
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            {gaps.length} compliance gaps · {warnings.length} warnings
+          </span>
+        </summary>
+      <div className="grid gap-6 border-t border-border p-4 sm:grid-cols-2">
         <Card
         className={
           gaps.length > 0
@@ -1268,6 +1313,7 @@ export function ReportView({
           </CardContent>
         </Card>
       </div>
+      </details>
 
       <div className="flex justify-end">
         <Button onClick={() => onContinueToExport(buildFinalSections())}>
