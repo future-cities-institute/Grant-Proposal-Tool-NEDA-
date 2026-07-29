@@ -19,6 +19,11 @@ import {
   rewriteSection,
 } from "@/lib/api";
 import {
+  buildGuidedEditorIssues,
+  type GuidedEditorIssue,
+  type GuidedIssueStatus,
+} from "@/lib/guidedEditorIssues";
+import {
   Check,
   AlertTriangle,
   ArrowLeft,
@@ -30,6 +35,7 @@ import {
   Loader2,
   ArrowRight,
   ExternalLink,
+  X,
 } from "lucide-react";
 
 type SectionEditorState = {
@@ -40,6 +46,13 @@ type SectionEditorState = {
   missingInputValues: Record<string, string>;
   showAllMissing: boolean;
 };
+
+type GuidedRewritePreview = {
+  issueId?: string;
+  sectionKey: string;
+  text: string;
+  instruction: string;
+} | null;
 
 export function ReportView({
   draft,
@@ -66,6 +79,11 @@ export function ReportView({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [sectionError, setSectionError] = useState<string>("");
   const [isValidating, setIsValidating] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [issueStatuses, setIssueStatuses] = useState<Record<string, GuidedIssueStatus>>({});
+  const [issueInputs, setIssueInputs] = useState<Record<string, string>>({});
+  const [freeformInstructions, setFreeformInstructions] = useState<Record<string, string>>({});
+  const [guidedPreview, setGuidedPreview] = useState<GuidedRewritePreview>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const previousBodiesRef = useRef<Record<string, string>>({});
 
@@ -192,6 +210,35 @@ export function ReportView({
       .slice(0, 6);
   }, [gaps]);
 
+  const guidedIssues = useMemo(
+    () =>
+      finalSections.flatMap((section) => {
+        const sectionResult = sectionResults[section.key];
+        const expectedPromptItems =
+          section.prompt_items || requirements.sections.find((item) => item.key === section.key)?.prompt_items || [];
+        const reviewPrompts = extractPromptReviewItems(
+          section.body || "",
+          promptCoverage[section.key],
+          expectedPromptItems
+        );
+        return buildGuidedEditorIssues({
+          sectionKey: section.key,
+          sectionTitle: section.title || section.key,
+          sectionBody: section.body || "",
+          warnings: sectionResult?.warnings || [],
+          gaps: sectionResult?.compliance_gaps || [],
+          reviewPrompts,
+        });
+      }),
+    [finalSections, promptCoverage, requirements.sections, sectionResults]
+  );
+
+  const visibleGuidedIssues = guidedIssues.filter((issue) => {
+    const status = issueStatuses[issue.id] || "open";
+    return status !== "dismissed" && status !== "resolved";
+  });
+  const selectedIssue = guidedIssues.find((issue) => issue.id === selectedIssueId) || null;
+
   const buildFinalSections = (): DraftSection[] => finalSections;
 
   const openSection = (key: string) => {
@@ -210,6 +257,11 @@ export function ReportView({
     window.setTimeout(() => {
       sectionRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 120);
+  };
+
+  const focusGuidedIssue = (issue: GuidedEditorIssue) => {
+    setSelectedIssueId(issue.id);
+    jumpToSection(issue.sectionKey);
   };
 
   useEffect(() => {
@@ -241,7 +293,7 @@ export function ReportView({
         );
         if (!cancelled) {
           setLiveValidation((prev) => {
-            const merged = mergeSectionResults(prev?.sectionResults ?? [], nextResults);
+            const merged = mergeSectionResults(prev?.sectionResults ?? [], nextResults, true);
             return {
               sectionResults: merged,
               warnings: merged.flatMap((result) =>
@@ -276,6 +328,21 @@ export function ReportView({
       window.clearTimeout(timer);
     };
   }, [finalSections, sections.length, sectionStates]);
+
+  useEffect(() => {
+    const currentIds = new Set(guidedIssues.map((issue) => issue.id));
+    setIssueStatuses((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [issueId, status] of Object.entries(current)) {
+        if (status === "applied" && !currentIds.has(issueId)) {
+          next[issueId] = "resolved";
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [guidedIssues]);
 
   const setSectionState = (key: string, updater: (prev: SectionEditorState) => SectionEditorState) => {
     setSectionStates((prev) => {
@@ -378,6 +445,93 @@ export function ReportView({
     }
   };
 
+  const generateGuidedSuggestion = async (issue: GuidedEditorIssue) => {
+    const state = sectionStates[issue.sectionKey];
+    if (!state) return;
+    const providedFacts = (issueInputs[issue.id] || "").trim();
+    if (issue.requiresUserInformation && !providedFacts) {
+      setSectionError("Add the missing or verified information before generating this correction.");
+      setSelectedIssueId(issue.id);
+      return;
+    }
+    const instruction = [
+      `Address this review issue: ${issue.title}`,
+      `Recommended action: ${issue.recommendedAction}`,
+      issue.anchorExcerpt ? `Focus on this existing passage: ${issue.anchorExcerpt}` : "Update only the relevant part of this section.",
+      providedFacts ? `Use these user-provided facts: ${providedFacts}` : "",
+      "Preserve all verified facts, names, dates, figures, and unrelated paragraphs.",
+      "Do not invent missing information or unsupported evidence.",
+    ].filter(Boolean).join("\n");
+
+    setSectionError("");
+    setBusyKey(issue.sectionKey);
+    setSelectedIssueId(issue.id);
+    try {
+      const out = await rewriteSection({
+        section_key: issue.sectionKey,
+        section_title: issue.sectionTitle,
+        current_text: state.working,
+        instruction,
+        requirements,
+        profile,
+      });
+      const nextText = stripPromptMetadataLines(out.text || "");
+      if (!nextText) throw new Error("The correction did not return section text.");
+      setGuidedPreview({ issueId: issue.id, sectionKey: issue.sectionKey, text: nextText, instruction });
+      setIssueStatuses((current) => ({ ...current, [issue.id]: "suggested" }));
+    } catch (error) {
+      setSectionError(error instanceof Error ? error.message : "Could not generate a correction.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const generateFreeformSuggestion = async (sectionKey: string, sectionTitle: string) => {
+    const state = sectionStates[sectionKey];
+    const request = (freeformInstructions[sectionKey] || "").trim();
+    if (!state || !request) {
+      setSectionError("Describe the change you want before generating a suggestion.");
+      return;
+    }
+    const instruction = [
+      request,
+      "Preserve verified facts, names, dates, figures, and unrelated content.",
+      "Do not invent missing information.",
+    ].join("\n");
+    setSectionError("");
+    setBusyKey(sectionKey);
+    try {
+      const out = await rewriteSection({
+        section_key: sectionKey,
+        section_title: sectionTitle,
+        current_text: state.working,
+        instruction,
+        requirements,
+        profile,
+      });
+      const nextText = stripPromptMetadataLines(out.text || "");
+      if (!nextText) throw new Error("The rewrite did not return section text.");
+      setGuidedPreview({ sectionKey, text: nextText, instruction });
+    } catch (error) {
+      setSectionError(error instanceof Error ? error.message : "Could not generate a rewrite.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const applyGuidedPreview = () => {
+    if (!guidedPreview) return;
+    const preview = guidedPreview;
+    setSectionState(preview.sectionKey, (state) => {
+      const versions = [...state.versions.slice(0, state.index + 1), preview.text];
+      return { ...state, versions, index: versions.length - 1, working: preview.text };
+    });
+    if (preview.issueId) {
+      setIssueStatuses((current) => ({ ...current, [preview.issueId as string]: "applied" }));
+    }
+    setGuidedPreview(null);
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
       <div className="flex items-center justify-between">
@@ -407,6 +561,74 @@ export function ReportView({
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           Open any section below to edit text directly, ask AI for targeted changes, then apply only what you want.
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/35">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">Guided review</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Select an issue to see the exact action, provide missing facts when needed, and preview a correction before applying it.
+              </p>
+            </div>
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              {isValidating ? "Rechecking changes..." : `${visibleGuidedIssues.length} open`}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {visibleGuidedIssues.length > 0 ? (
+            visibleGuidedIssues.slice(0, 10).map((issue) => {
+              const status = issueStatuses[issue.id] || "open";
+              return (
+                <div
+                  key={issue.id}
+                  className={`rounded-lg border p-3 ${selectedIssueId === issue.id ? "border-primary/50 bg-primary/5" : "border-border bg-background/40"}`}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <button type="button" className="flex-1 text-left" onClick={() => focusGuidedIssue(issue)}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-foreground">{issue.title}</p>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                          {issue.category.replaceAll("_", " ")}
+                        </span>
+                        {status !== "open" && (
+                          <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-primary">
+                            {status}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-muted-foreground">{issue.sectionTitle}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{issue.recommendedAction}</p>
+                    </button>
+                    <div className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="outline" onClick={() => focusGuidedIssue(issue)}>Review fix</Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Dismiss ${issue.title}`}
+                        onClick={() => {
+                          setIssueStatuses((current) => ({ ...current, [issue.id]: "dismissed" }));
+                          if (selectedIssueId === issue.id) setSelectedIssueId(null);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
+              <Check className="h-4 w-4" /> No open guided-review issues.
+            </p>
+          )}
+          {visibleGuidedIssues.length > 10 && (
+            <p className="text-xs text-muted-foreground">Review a section to work through the remaining {visibleGuidedIssues.length - 10} issues.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -518,6 +740,8 @@ export function ReportView({
           const priorityWarnings = sectionWarnings.filter((warning) =>
             PRIORITY_WARNING_TYPES.has(warning.type)
           );
+          const activeSectionIssue = selectedIssue?.sectionKey === sec.key ? selectedIssue : null;
+          const activePreview = guidedPreview?.sectionKey === sec.key ? guidedPreview : null;
 
           return (
             <Card
@@ -576,6 +800,67 @@ export function ReportView({
               </CardHeader>
               {state.isOpen && (
                 <CardContent className="space-y-4">
+                  {activeSectionIssue && (
+                    <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Selected issue</p>
+                          <p className="mt-2 font-medium text-foreground">{activeSectionIssue.title}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{activeSectionIssue.explanation}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setIssueStatuses((current) => ({ ...current, [activeSectionIssue.id]: "dismissed" }));
+                            setSelectedIssueId(null);
+                          }}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                      <div className="mt-3 rounded-md border border-border bg-background/60 p-3 text-sm">
+                        <p className="font-medium text-foreground">Recommended action</p>
+                        <p className="mt-1 text-muted-foreground">{activeSectionIssue.recommendedAction}</p>
+                      </div>
+                      {activeSectionIssue.anchorExcerpt && (
+                        <div className="mt-3 border-l-2 border-primary/40 pl-3 text-sm text-muted-foreground">
+                          <p className="text-xs font-medium uppercase tracking-wide">Flagged passage</p>
+                          <p className="mt-1">{activeSectionIssue.anchorExcerpt}</p>
+                        </div>
+                      )}
+                      {activeSectionIssue.requiresUserInformation && (
+                        <div className="mt-3 space-y-2">
+                          <label className="text-sm font-medium text-foreground" htmlFor={`issue-input-${activeSectionIssue.id}`}>
+                            Information needed from you
+                          </label>
+                          <Textarea
+                            id={`issue-input-${activeSectionIssue.id}`}
+                            value={issueInputs[activeSectionIssue.id] || ""}
+                            onChange={(event) =>
+                              setIssueInputs((current) => ({ ...current, [activeSectionIssue.id]: event.target.value }))
+                            }
+                            rows={3}
+                            placeholder="Add verified facts, names, dates, figures, or evidence. The assistant will not invent missing information."
+                          />
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => generateGuidedSuggestion(activeSectionIssue)}
+                          disabled={isBusy || !activeSectionIssue.canSuggestRewrite}
+                        >
+                          {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                          {isBusy ? "Generating..." : "Preview correction"}
+                        </Button>
+                        {!activeSectionIssue.canSuggestRewrite && (
+                          <p className="self-center text-xs text-muted-foreground">Add the missing content manually before requesting a rewrite.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-3">
                       <p className="text-xs text-muted-foreground">
                         Version {state.index + 1} of {versionCount}
@@ -601,6 +886,86 @@ export function ReportView({
                         </Button>
                       </div>
                   </div>
+
+                  <div className="rounded-lg border border-border bg-muted/20 p-4">
+                    <p className="text-sm font-medium text-foreground">Ask AI to revise this section</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Describe a change outside the guided issues. You will preview the result before applying it.
+                    </p>
+                    <Textarea
+                      className="mt-3"
+                      value={freeformInstructions[sec.key] || ""}
+                      onChange={(event) =>
+                        setFreeformInstructions((current) => ({ ...current, [sec.key]: event.target.value }))
+                      }
+                      rows={3}
+                      placeholder="Example: Reduce this to 300 words without removing facts or budget figures."
+                    />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        "Make this more concise without removing facts.",
+                        "Strengthen community benefit without inventing information.",
+                        "Add measurable outcomes using only the details provided.",
+                      ].map((example) => (
+                        <Button
+                          key={example}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setFreeformInstructions((current) => ({ ...current, [sec.key]: example }))}
+                        >
+                          {example}
+                        </Button>
+                      ))}
+                    </div>
+                    <Button
+                      className="mt-3"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => generateFreeformSuggestion(sec.key, sec.title)}
+                      disabled={isBusy}
+                    >
+                      {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      {isBusy ? "Generating..." : "Preview rewrite"}
+                    </Button>
+                  </div>
+
+                  {activePreview && (
+                    <div className="rounded-lg border border-emerald-500/35 bg-emerald-50/70 p-4 dark:bg-emerald-950/10">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Suggested revision</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Review or edit this suggestion before applying it to the section.</p>
+                        </div>
+                        <Button size="sm" variant="ghost" onClick={() => setGuidedPreview(null)}>Discard</Button>
+                      </div>
+                      <Textarea
+                        className="mt-3 bg-background/70"
+                        value={activePreview.text}
+                        onChange={(event) =>
+                          setGuidedPreview((current) => current ? { ...current, text: event.target.value } : current)
+                        }
+                        rows={12}
+                      />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" onClick={applyGuidedPreview}>
+                          <Check className="mr-2 h-4 w-4" /> Apply suggestion
+                        </Button>
+                        {activePreview.issueId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const issue = guidedIssues.find((item) => item.id === activePreview.issueId);
+                              if (issue) void generateGuidedSuggestion(issue);
+                            }}
+                            disabled={isBusy}
+                          >
+                            Try another version
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {sectionError && activeKey === sec.key && (
                     <p className="text-sm text-destructive">{sectionError}</p>
@@ -935,7 +1300,11 @@ function buildImmediateSectionResults(sections: DraftSection[]) {
     .filter((section) => section.warnings.length > 0);
 }
 
-function mergeSectionResults(base: ComplianceSummary["sectionResults"], overrides: ComplianceSummary["sectionResults"]) {
+function mergeSectionResults(
+  base: ComplianceSummary["sectionResults"],
+  overrides: ComplianceSummary["sectionResults"],
+  replaceFindings = false
+) {
   const merged = new Map<string, ComplianceSummary["sectionResults"][number]>();
 
   for (const result of base) {
@@ -952,8 +1321,12 @@ function mergeSectionResults(base: ComplianceSummary["sectionResults"], override
     merged.set(result.section, {
       ...current,
       ...result,
-      warnings: dedupeWarnings([...(current.warnings || []), ...(result.warnings || [])]),
-      compliance_gaps: result.compliance_gaps.length > 0 ? result.compliance_gaps : current.compliance_gaps,
+      warnings: replaceFindings
+        ? dedupeWarnings(result.warnings || [])
+        : dedupeWarnings([...(current.warnings || []), ...(result.warnings || [])]),
+      compliance_gaps: replaceFindings
+        ? result.compliance_gaps
+        : result.compliance_gaps.length > 0 ? result.compliance_gaps : current.compliance_gaps,
       scoring_hooks: result.scoring_hooks || current.scoring_hooks,
     });
   }
