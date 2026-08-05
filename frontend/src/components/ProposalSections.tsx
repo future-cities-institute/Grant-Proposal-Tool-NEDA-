@@ -166,23 +166,25 @@ export function ProposalSections({
               >
                 <div className="h-full w-1 shrink-0 rounded-full bg-primary" />
                 <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <PencilLine className="h-4 w-4 text-muted-foreground" />
                     <Input
                       value={sec.title}
                       onChange={(e) => onSectionTitleChange(sec.key, e.target.value)}
-                      className="h-8"
+                      className="h-8 min-w-[220px] flex-1"
                       aria-label={`Edit title for section ${i + 1}`}
                     />
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
+                      sec.word_limit
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {sec.word_limit ? `${sec.word_limit}-word limit` : "No explicit word limit detected"}
+                    </span>
                   </div>
                   {sec.guidance && (
                     <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
                       {sec.guidance}
-                    </p>
-                  )}
-                  {sec.word_limit && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Word limit: {sec.word_limit}
                     </p>
                   )}
                   {sec.prompt_items && sec.prompt_items.length > 0 && (

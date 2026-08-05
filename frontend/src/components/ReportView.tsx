@@ -765,6 +765,8 @@ export function ReportView({
           const sectionGaps = sectionResult?.compliance_gaps ?? [];
           const expectedPromptItems =
             sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items || [];
+          const sectionWordLimit = requirements.sections.find((item) => item.key === sec.key)?.word_limit;
+          const sectionWordCount = state.working.trim() ? state.working.trim().split(/\s+/).length : 0;
           const reviewItems = extractPromptReviewItems(
             state.working || "",
             promptCoverage[sec.key],
@@ -797,6 +799,15 @@ export function ReportView({
                   <div className="flex items-center gap-3">
                     <CardTitle className="text-base">{sec.title}</CardTitle>
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                        sectionWordLimit && sectionWordCount > sectionWordLimit
+                          ? "border-rose-500/40 bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"
+                          : "border-border bg-muted/50 text-muted-foreground"
+                      }`}>
+                        {sectionWordLimit
+                          ? `${sectionWordCount} / ${sectionWordLimit} words`
+                          : `${sectionWordCount} words · no explicit limit`}
+                      </span>
                       <span
                         className={
                           sectionGaps.length > 0

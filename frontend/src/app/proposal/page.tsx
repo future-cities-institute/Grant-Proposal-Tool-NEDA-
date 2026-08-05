@@ -37,6 +37,7 @@ import {
   type SavedProposal,
 } from "@/lib/api";
 import {
+  COMMUNITY_PROFILE_FIELD_KEYS,
   CommunityForm,
   blankCommunityFormValues,
   type CommunityFormValues,
@@ -54,35 +55,8 @@ const STEPS = [
   { id: 5, label: "Export draft" },
 ];
 
-const COMMUNITY_PROFILE_KEYS: Array<keyof CommunityFormValues> = [
-  "community_name",
-  "region",
-  "legal_name",
-  "operating_name",
-  "applicant_type",
-  "applicant_profile",
-  "registration_number",
-  "year_established",
-  "contact_name",
-  "contact_title",
-  "contact_email",
-  "contact_phone",
-  "mailing_address",
-  "website",
-  "indigenous_communities",
-  "population_served",
-  "demographic_context",
-  "existing_services",
-  "service_gaps",
-  "remoteness_context",
-  "governance_context",
-  "strengths",
-  "data_governance",
-  "cultural_safety",
-];
-
 function applicationDetailsFrom(values: CommunityFormValues): Partial<CommunityProfile> {
-  const reusable = new Set<string>(COMMUNITY_PROFILE_KEYS);
+  const reusable = new Set<string>(COMMUNITY_PROFILE_FIELD_KEYS);
   return Object.fromEntries(Object.entries(values).filter(([key]) => !reusable.has(key))) as Partial<CommunityProfile>;
 }
 
@@ -294,6 +268,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
             community_profile_snapshot: activeCommunityProfileSnapshot,
           });
           setProposalId(saved.id);
+          window.history.replaceState(window.history.state, "", `/proposal?proposalId=${encodeURIComponent(saved.id)}`);
         } catch (error) {
           console.warn("Could not save proposal after grant parsing.", error);
         }

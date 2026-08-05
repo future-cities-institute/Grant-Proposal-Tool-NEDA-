@@ -99,6 +99,33 @@ const schema = z.object({
 
 export type CommunityFormValues = z.infer<typeof schema>;
 
+export const COMMUNITY_PROFILE_FIELD_KEYS: Array<keyof CommunityFormValues> = [
+  "community_name",
+  "region",
+  "legal_name",
+  "operating_name",
+  "applicant_type",
+  "applicant_profile",
+  "registration_number",
+  "year_established",
+  "contact_name",
+  "contact_title",
+  "contact_email",
+  "contact_phone",
+  "mailing_address",
+  "website",
+  "indigenous_communities",
+  "population_served",
+  "demographic_context",
+  "existing_services",
+  "service_gaps",
+  "remoteness_context",
+  "governance_context",
+  "strengths",
+  "data_governance",
+  "cultural_safety",
+];
+
 const selectClassName =
   "flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
@@ -187,7 +214,8 @@ export const blankCommunityFormValues: CommunityFormValues = {
 const demoValues: CommunityFormValues = {
   community_name: "Kinngait",
   region: "Nunavut",
-  local_priority: "Improve reliable year-round access to clean drinking water",
+  local_priority:
+    "Illustrative application priority: improve reliable year-round access to clean drinking water by addressing high-risk infrastructure, repair delays, and local maintenance capacity. Confirm that this matches the applicant's approved priorities.",
   legal_name: "Hamlet of Kinngait",
   operating_name: "Kinngait",
   applicant_type: "Indigenous municipal or local government",
@@ -214,103 +242,103 @@ const demoValues: CommunityFormValues = {
     "Kinngait's northern location and seasonal logistics increase costs, constrain construction windows, and require early procurement and careful scheduling.",
   governance_context:
     "The project will be guided by Hamlet leadership, local public works expertise, and community feedback through council and resident engagement channels.",
-  project_title: "Kinngait Water Infrastructure Reliability Project",
+  project_title: "Community Water System Reliability Project (Example)",
   project_type: "Community infrastructure",
-  project_stage: "Implementation ready",
-  project_location: "Kinngait, Nunavut",
-  timeline: "Planning in Q2 2026, implementation Q3-Q4 2026, evaluation Q1 2027",
+  project_stage: "Planning and design underway",
+  project_location: "Applicant community and surrounding service area",
+  timeline: "Months 1-2: technical assessment and design; months 3-5: procurement; months 6-9: installation and training; months 10-12: monitoring and final reporting.",
   project_summary:
-    "Upgrade critical water infrastructure and strengthen local maintenance practices to reduce disruptions and improve reliable access to clean water.",
+    "Replace priority water-system components, improve preventive maintenance, and train local operators to reduce avoidable service interruptions. This is illustrative project information and must be replaced or verified before use.",
   project_objectives:
-    "Improve water service reliability, reduce avoidable disruptions, strengthen local operator capacity, and create better evidence for future infrastructure planning.",
+    "1) Replace the highest-risk components identified through a technical assessment; 2) reduce avoidable service interruptions; 3) train at least four operators; and 4) establish a documented preventive-maintenance and monitoring process.",
   project_activities:
-    "Complete technical assessment, finalize design, procure materials, coordinate seasonal shipping, install priority upgrades, train local operators, and monitor performance.",
+    "Complete a technical assessment; confirm the replacement scope; obtain approvals; procure and ship components; install and commission upgrades; deliver operator training; update maintenance procedures; and monitor performance for three months.",
   expected_outputs:
-    "Completed technical assessment, finalized design package, procured and installed priority components, operator training materials, updated maintenance procedures, monitoring records, and final project report.",
+    "One technical assessment, one approved design and procurement package, installed priority components, training for at least four operators, updated maintenance procedures, three months of monitoring records, and one final report.",
   staffing_plan:
-    "Hamlet leadership will oversee delivery, public works staff will support implementation and maintenance, regional technical advisors will review design and installation, and the local health team will support outcome tracking.",
+    "The applicant's project lead will manage scope, schedule, procurement, and reporting. Public works staff will support site access and implementation. A qualified engineering advisor will approve design and commissioning. Local operators will complete training and maintain project records.",
   project_management_approach:
-    "The project will use a phased workplan with council oversight, regular check-ins with technical advisors, procurement tracking, risk monitoring, and documented milestones.",
+    "The project lead will maintain a milestone schedule, decision log, procurement tracker, risk register, and monthly budget report. Leadership will approve scope or budget changes, and the technical advisor will sign off before procurement and after commissioning.",
   challenges:
-    "Aging infrastructure causes service disruptions and boil-water advisories. Seasonal logistics increase maintenance delays and cost.",
+    "Illustrative need to verify: aging components and delayed access to replacement parts have contributed to service interruptions. Remote shipping windows, limited spare-parts inventory, and a small operator team increase repair time and delivery risk.",
   strengths:
     "Strong local leadership, an experienced public works team, and active resident participation in planning sessions increase project readiness.",
   partners:
-    "Hamlet council (project oversight), regional technical advisors (design review), local public works team (implementation), and local health team (outcomes tracking).",
+    "Applicant leadership: approvals and oversight; public works team: site coordination, installation support, and maintenance; engineering advisor: assessment, design review, and commissioning; supplier/installer: equipment delivery and installation. Confirm names and commitments before submission.",
   target_beneficiaries:
-    "Residents, Elders, families with young children, public works staff, and community facilities that depend on reliable water service.",
+    "Residents, Elders, families, local operators, and community facilities that depend on reliable water service.",
   direct_beneficiaries:
-    "Approximately 1,500 residents and core community facilities will directly benefit through more reliable water service, fewer disruptions, and stronger local maintenance capacity.",
+    "Illustrative estimate: 1,200 residents and five community facilities. Replace these figures with the applicant's verified service-population and facility records.",
   indirect_beneficiaries:
-    "Visitors, service providers, surrounding organizations, and future community projects that depend on reliable municipal infrastructure.",
+    "Visitors, visiting service providers, and organizations whose programming depends on reliable community facilities; quantify these groups only if reliable records are available.",
   expected_outcomes:
-    "Fewer service disruptions, improved confidence in local water systems, stronger maintenance capacity, and clearer evidence for future infrastructure planning.",
+    "Short term: priority components are commissioned, operators can use the new procedures, and preventive-maintenance records are complete. Medium term: avoidable interruptions and repair response time improve against the verified baseline. Long term: maintenance evidence supports more reliable service and better capital planning.",
   quantitative_indicators:
-    "Number of service disruptions, number/duration of boil-water advisories, operators trained, milestones completed on schedule, and maintenance response time.",
+    "Illustrative targets: install 100% of approved priority components; train at least four operators; complete at least 90% of scheduled preventive-maintenance checks; and reduce average repair response time by 20% from the verified baseline.",
   qualitative_indicators:
-    "Resident confidence in water reliability, staff confidence in maintenance procedures, and feedback from Elders, service users, and community facilities.",
+    "Operator confidence using the new procedures, staff assessment of equipment reliability, and facility feedback about service consistency and communication. Collect these through a short pre/post operator questionnaire, a commissioning debrief, and structured facility check-ins.",
   baseline_conditions:
-    "Baseline conditions include recent disruptions, boil-water advisories, maintenance delays, and current operator capacity before upgrades are implemented.",
+    "Illustrative baseline only: the example 12-month maintenance summary records 12 interruptions totaling 46 service hours, an 18-hour average repair response time, 58% completion of scheduled preventive-maintenance checks, and two operators with current training. Replace every figure with verified applicant records.",
   baseline_data_collection:
-    "Collect baseline data from public works records, advisory history, maintenance logs, council notes, and pre-project feedback from service users.",
+    "The project lead will compile dated work orders, maintenance logs, incident records, parts inventories, and training records using a consistent baseline template before installation begins.",
   success_measurement:
-    "Compare pre- and post-project service records, maintenance logs, training completion, resident feedback, and final technical review findings.",
-  community_support_status: "Community support confirmed",
+    "Compare verified baseline records with three- and six-month monitoring results. Report completed installations, interruptions, response time, preventive-maintenance completion, training attendance, operator feedback, and technical commissioning findings.",
+  community_support_status: "Engagement planned",
   community_engagement:
-    "Residents will be updated through council meetings and local notices, with feedback gathered from public works staff, Elders, and service users.",
+    "Example engagement plan: present the proposed scope through the applicant's normal public meeting process, provide plain-language updates, and invite feedback from operators, Elders, facility representatives, and residents before finalizing implementation details.",
   approvals_status:
-    "Council support is expected; attach council motion, letter of support, or equivalent approval when available.",
+    "To confirm: obtain the applicant's formal approval and attach the required motion, resolution, or letter before submission.",
   elders_involvement:
-    "Elders will be invited to provide feedback on community priorities and lived impacts of water service disruptions.",
+    "Elders will be invited through locally appropriate channels to comment on service impacts, communication needs, and implementation timing; participation and honoraria must be confirmed locally.",
   knowledge_keepers_involvement:
-    "Knowledge Keepers and long-term residents will be invited to share observations about seasonal conditions, community priorities, and past service disruptions that should inform planning and communication.",
+    "Knowledge Keepers or long-term residents will be invited, where appropriate, to share observations about seasonal conditions and community priorities. The applicant will confirm whether this involvement is relevant and how knowledge may be used.",
   youth_involvement:
-    "Youth perspectives will be gathered through school/community facility feedback where appropriate, with a focus on how reliable water service supports families, recreation, learning spaces, and daily wellbeing.",
+    "Youth-serving organizations will be offered an age-appropriate opportunity to comment on impacts to learning, recreation, and community facilities; the applicant will confirm whether direct youth engagement is appropriate.",
   data_governance:
     "Community-held records and feedback will be used with local approval and reported in aggregate to respect community control over information.",
   cultural_safety:
     "Engagement will use plain language, respect local decision-making processes, and avoid collecting unnecessary personal information.",
   evidence_note:
-    "Recent service disruptions, boil-water advisories, and maintenance delays demonstrate the urgency of improving system reliability.",
+    "Illustrative evidence only: an example 12-month maintenance-log summary records 12 interruptions totaling 46 service hours, three urgent replacement-part shipments, an 18-hour average repair response time, and 58% completion of scheduled maintenance checks. Replace these figures and cite verified logs, work orders, technical assessments, photographs, facility feedback, and applicable advisories.",
   why_now:
-    "The project is timely because aging infrastructure and rising logistics costs make early action more cost-effective than repeated emergency response.",
+    "The work should proceed now if verified maintenance records show increasing failure risk and procurement must begin before the next shipping or construction window. Delay could increase emergency repair costs or postpone installation by a full delivery cycle. Confirm these conditions and connect them to the funder's current objectives before submission.",
   requested_budget: 350000,
   total_project_cost: 390000,
-  budget_personnel: "Project coordination and local staff time for implementation and reporting.",
-  budget_professional_services: "Engineering/design review and technical advisory support.",
-  budget_equipment_materials: "Priority infrastructure components, replacement parts, materials, and installation supplies.",
-  budget_travel_logistics: "Seasonal shipping, freight, and travel/logistics required for northern delivery.",
-  budget_training: "Operator training and documentation of maintenance procedures.",
-  budget_evaluation: "Monitoring, data collection, final reporting, and outcome assessment.",
-  budget_admin: "Administrative coordination and financial reporting support.",
-  budget_contingency: "Contingency for shipping delays, cost escalation, or urgent replacement needs.",
+  budget_personnel: "$60,000 — project management, local implementation support, record keeping, and reporting.",
+  budget_professional_services: "$55,000 — technical assessment, engineering/design review, procurement specifications, and commissioning.",
+  budget_equipment_materials: "$160,000 — priority components, replacement parts, controls, installation materials, and initial spare-parts inventory.",
+  budget_travel_logistics: "$45,000 — freight, shipping, technical travel, accommodation, and local transportation.",
+  budget_training: "$15,000 — operator training, practical exercises, and maintenance documentation.",
+  budget_evaluation: "$10,000 — baseline compilation, monitoring, analysis, and final reporting.",
+  budget_admin: "$15,000 — financial administration, procurement support, and funder reporting.",
+  budget_contingency: "$30,000 — approximately 7.7% for documented price, freight, or installation risks, subject to funder eligibility.",
   budget_breakdown:
-    "Engineering/design, materials and shipping, installation, operator training, contingency, and evaluation/reporting.",
+    "Total illustrative project cost: $390,000. Personnel $60,000; professional services $55,000; equipment/materials $160,000; travel/logistics $45,000; training $15,000; evaluation $10,000; administration $15,000; contingency $30,000. Requested grant: $350,000; applicant in-kind contribution: $40,000. Replace all figures with quotes and eligible-cost calculations.",
   budget_assumptions:
-    "Budget assumes seasonal shipping windows, local staff participation, technical advisory support, and contingency for northern procurement costs.",
+    "Illustrative assumptions: supplier estimates remain valid through procurement; eligible taxes and freight are included; applicant staff provide $40,000 of documented in-kind time; contingency requires approval and may only cover eligible unforeseen costs. Verify all assumptions against the funder's rules.",
   other_funding_status: "In-kind support confirmed",
   other_funding:
-    "In-kind project oversight from Hamlet staff and technical review support from regional advisors.",
+    "$40,000 illustrative applicant in-kind contribution for project oversight, local implementation support, meeting coordination, and reporting. Confirm valuation method and funder eligibility.",
   risks_and_mitigation:
-    "Shipping delays and short construction seasons will be managed through early procurement, phased scheduling, and contingency planning.",
+    "Financial risks include price escalation and ineligible costs; operational risks include procurement delays, staff availability, and incompatible components; regulatory risks include delayed permits or approvals; environmental risks include weather and restricted installation windows; stakeholder risks include unclear expectations or insufficient notice about temporary service impacts. Controls include eligibility review, early specifications and approvals, technical sign-off, schedule and budget buffers, a communication plan, and monthly risk review.",
   risk_likelihood:
-    "Moderate likelihood overall, with higher likelihood for shipping delays, weather interruptions, and price volatility because of northern delivery constraints.",
+    "Illustrative rating: procurement/freight delay—medium because delivery options are limited; price escalation—medium until quotes are secured; approval delay—low to medium depending on local requirements; weather-related installation delay—medium; technical incompatibility—low after engineering review; staff-capacity pressure—medium during installation and reporting.",
   risk_impact:
-    "Potential impacts include schedule delays, increased freight or materials costs, and temporary pressure on local staff capacity if procurement or installation windows shift.",
+    "Potential impacts include missed installation windows, cost increases, delayed commissioning, temporary service interruption, or added workload for local staff. Confirm the rating and impact of each risk during planning.",
   mitigation_plan:
-    "Mitigation will include early procurement, phased scheduling, technical review before ordering, regular risk check-ins, documented contingency decisions, and use of the contingency budget for urgent logistics or replacement needs.",
+    "The project lead will own the risk register and review it monthly with applicant leadership. Complete technical specifications and eligibility checks before procurement; obtain multiple quotes where feasible; confirm compatibility before ordering; secure required approvals; identify alternate freight and installation dates; notify affected facilities before service impacts; escalate high risks to leadership; and obtain approval before using contingency funds.",
   sustainability_plan:
-    "Training local operators and documenting maintenance procedures will help the community sustain improvements after the grant period.",
+    "The applicant will assign trained operators, incorporate inspection tasks into routine work plans, maintain a spare-parts register, retain technical documents, and include future maintenance and replacement costs in annual capital planning.",
   maintenance_requirements:
-    "Ongoing maintenance will require routine inspections, operator checklists, spare parts tracking, seasonal review of vulnerable components, and continued coordination between Hamlet leadership, public works staff, and technical advisors.",
+    "Ongoing requirements include monthly operator checks, scheduled preventive maintenance, an updated spare-parts inventory, annual technical review of critical components, incident documentation, and refresher training when staff roles change.",
   ownership_model:
-    "The Hamlet will remain accountable for local oversight, operations, records, and maintenance decisions, with public works staff carrying forward day-to-day procedures and council receiving updates through regular reporting.",
+    "The applicant will own the funded assets and remain accountable for operations, records, maintenance, and replacement decisions. Public works staff will complete day-to-day procedures, with leadership receiving scheduled performance and budget updates.",
   future_funding_sources:
-    "Future funding may include territorial infrastructure programs, federal Indigenous/community infrastructure streams, and annual municipal capital planning informed by the project's maintenance records and evaluation results.",
+    "Future costs will be considered through the applicant's annual operating and capital planning. Additional eligible infrastructure programs may be pursued for later phases, but no unconfirmed funding should be presented as committed.",
   scaling_plan:
-    "Lessons from the project can inform future maintenance planning and other water reliability upgrades in the community.",
+    "The assessment template, procurement specifications, operator checklist, risk register, and monitoring framework can be reused for later infrastructure work after adapting them to each asset and funding program.",
   supporting_documents_text:
-    "Supporting notes: Council discussions identified water reliability as a priority for residents and community facilities. Public works staff report that aging components, shipping delays, and limited local maintenance capacity contribute to service interruptions. Regional advisors have indicated that early procurement, operator training, and phased implementation will reduce delivery risk. Community feedback emphasizes reliable access for Elders, families, health services, and public facilities.",
+    "ILLUSTRATIVE EXAMPLE — NOT A SOURCE DOCUMENT. Example maintenance summary for demonstrating a strong input: 12 interruptions totaling 46 service hours in the prior 12 months; three urgent replacement-part shipments; 18-hour average repair response time; 58% completion of scheduled preventive-maintenance checks; and two operators with current training. Example planning notes identify aging components, limited spare-parts inventory, freight delays, and incomplete maintenance documentation as contributing factors. Before submission, replace every example figure and statement with verified excerpts from the applicant's technical assessment, dated maintenance and incident logs, approved meeting records, supplier estimates, engagement summary, letters of support, and funder guidance.",
 };
 
 const projectTypeOptions = [
@@ -614,12 +642,16 @@ export function CommunityForm({
     const currentValues = watch() as CommunityFormValues;
     setDemoBackup(currentValues);
     const nextValues = { ...currentValues };
-    (["project", "engagement", "evidence", "budget", "supporting"] as SectionKey[]).forEach((sectionKey) => {
-      sectionFields[sectionKey].forEach((field) => {
-        (nextValues as unknown as Record<string, unknown>)[field] =
-          (demoValues as unknown as Record<string, unknown>)[field];
-      });
+    const reusableFields = new Set<string>(COMMUNITY_PROFILE_FIELD_KEYS);
+    (Object.keys(demoValues) as Array<keyof CommunityFormValues>).forEach((field) => {
+      if (reusableFields.has(field)) return;
+      (nextValues as unknown as Record<string, unknown>)[field] =
+        (demoValues as unknown as Record<string, unknown>)[field];
     });
+    const communityLabel = currentValues.community_name.trim() || currentValues.legal_name.trim();
+    const regionLabel = currentValues.region.trim();
+    nextValues.project_title = `${communityLabel || "Community"} Water System Reliability Project (Example)`;
+    nextValues.project_location = [communityLabel || "Applicant community", regionLabel].filter(Boolean).join(", ");
     setSupportingDocNames(["demo-community-support-notes.txt"]);
     setSupportingDocError("");
     setOpenSections({
