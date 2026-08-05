@@ -195,7 +195,7 @@ export function ProposalSections({
                       <div className="space-y-1">
                         {sec.prompt_items.slice(0, 4).map((item) => (
                           <p key={item.prompt_id || item.prompt_text} className="text-xs text-muted-foreground">
-                            - {item.prompt_id ? `${item.prompt_id}: ` : ""}{item.prompt_text}
+                            - {formatPromptItem(item)}
                             {item.word_limit ? ` (${item.word_limit} words)` : ""}
                           </p>
                         ))}
@@ -207,7 +207,7 @@ export function ProposalSections({
                             <div className="mt-2 space-y-1">
                               {sec.prompt_items.slice(4).map((item) => (
                                 <p key={item.prompt_id || item.prompt_text} className="text-xs text-muted-foreground">
-                                  - {item.prompt_id ? `${item.prompt_id}: ` : ""}{item.prompt_text}
+                                  - {formatPromptItem(item)}
                                   {item.word_limit ? ` (${item.word_limit} words)` : ""}
                                 </p>
                               ))}
@@ -269,4 +269,15 @@ export function ProposalSections({
       </Card>
     </motion.div>
   );
+}
+
+function formatPromptItem(item: NonNullable<Requirements["sections"][number]["prompt_items"]>[number]) {
+  const promptId = String(item.prompt_id || "").trim();
+  const label = String(item.label || "").trim();
+  const promptText = String(item.prompt_text || "").trim();
+  const identifier = promptId ? (item.sub_prompt ? `(${promptId})` : `${promptId}:`) : "";
+  const labelledPrompt = label && !promptText.toLowerCase().startsWith(label.toLowerCase())
+    ? `${label}: ${promptText}`
+    : promptText;
+  return [identifier, labelledPrompt].filter(Boolean).join(" ");
 }

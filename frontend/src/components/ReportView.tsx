@@ -52,7 +52,18 @@ type GuidedRewritePreview = {
   sectionKey: string;
   text: string;
   instruction: string;
+  clearMissingInputs?: boolean;
 } | null;
+
+const FREEFORM_EDIT_EXAMPLES = [
+  { label: "Shorten to a word limit", instruction: "Reduce this section to the applicable word limit without removing verified facts, figures, required answers, or budget details." },
+  { label: "Use plainer language", instruction: "Use clear, plain language while preserving the meaning, verified facts, names, dates, figures, and required terminology." },
+  { label: "Clarify partner roles", instruction: "Clarify each partner's responsibilities, deliverables, and accountability using only the roles already provided." },
+  { label: "Strengthen community benefit", instruction: "Strengthen the explanation of community benefit without inventing information or adding unsupported claims." },
+  { label: "Add measurable outcomes", instruction: "Present the provided outcomes and indicators more clearly and measurably using only the details already supplied." },
+  { label: "Convert activities to bullets", instruction: "Format activities, milestones, or deliverables as concise bullet points. Keep narrative explanations as complete sentences and preserve all facts." },
+  { label: "Fix spelling and grammar", instruction: "Correct spelling, grammar, punctuation, and obvious typographical errors only. Do not change meaning, structure, names, Indigenous terminology, dates, figures, or factual claims." },
+];
 
 export function ReportView({
   draft,
@@ -85,6 +96,7 @@ export function ReportView({
   const [freeformInstructions, setFreeformInstructions] = useState<Record<string, string>>({});
   const [guidedPreview, setGuidedPreview] = useState<GuidedRewritePreview>(null);
   const [showAllGuidedIssues, setShowAllGuidedIssues] = useState(false);
+  const [reviewedSections, setReviewedSections] = useState<Record<string, boolean>>({});
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const previousBodiesRef = useRef<Record<string, string>>({});
 
@@ -345,6 +357,22 @@ export function ReportView({
     });
   }, [guidedIssues]);
 
+  useEffect(() => {
+    const sectionsWithOpenIssues = new Set(visibleGuidedIssues.map((issue) => issue.sectionKey));
+    if (sectionsWithOpenIssues.size === 0) return;
+    setReviewedSections((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const sectionKey of sectionsWithOpenIssues) {
+        if (next[sectionKey]) {
+          next[sectionKey] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [guidedIssues, issueStatuses]);
+
   const setSectionState = (key: string, updater: (prev: SectionEditorState) => SectionEditorState) => {
     setSectionStates((prev) => {
       const current = prev[key];
@@ -379,10 +407,12 @@ export function ReportView({
       const nextIndex = s.index - 1;
       return { ...s, index: nextIndex, working: s.versions[nextIndex] || "" };
     });
+    setReviewedSections((current) => ({ ...current, [key]: false }));
   };
 
   const resetWorking = (key: string) => {
     setSectionState(key, (s) => ({ ...s, working: s.versions[s.index] || "" }));
+    setReviewedSections((current) => ({ ...current, [key]: false }));
   };
 
   const generateMissingInfoSuggestion = async (key: string, title: string) => {
@@ -432,13 +462,7 @@ export function ReportView({
       if (!nextText) {
         throw new Error("The targeted update did not return section text.");
       }
-      setSectionState(key, (s) => ({
-        ...s,
-        versions: [...s.versions.slice(0, s.index + 1), nextText],
-        index: s.index + 1,
-        working: nextText,
-        missingInputValues: {},
-      }));
+      setGuidedPreview({ sectionKey: key, text: nextText, instruction, clearMissingInputs: true });
     } catch (e) {
       setSectionError(e instanceof Error ? e.message : "Could not generate a targeted section update.");
     } finally {
@@ -525,8 +549,15 @@ export function ReportView({
     const preview = guidedPreview;
     setSectionState(preview.sectionKey, (state) => {
       const versions = [...state.versions.slice(0, state.index + 1), preview.text];
-      return { ...state, versions, index: versions.length - 1, working: preview.text };
+      return {
+        ...state,
+        versions,
+        index: versions.length - 1,
+        working: preview.text,
+        missingInputValues: preview.clearMissingInputs ? {} : state.missingInputValues,
+      };
     });
+    setReviewedSections((current) => ({ ...current, [preview.sectionKey]: false }));
     if (preview.issueId) {
       setIssueStatuses((current) => ({ ...current, [preview.issueId as string]: "applied" }));
     }
@@ -563,9 +594,13 @@ export function ReportView({
           </div>
           <div>
             <p className="text-2xl font-semibold text-foreground">
-              {sections.filter((section) => !guidedIssues.some((issue) => issue.sectionKey === section.key)).length}
+              {sections.filter((section) =>
+                reviewedSections[section.key] &&
+                !visibleGuidedIssues.some((issue) => issue.sectionKey === section.key) &&
+                guidedPreview?.sectionKey !== section.key
+              ).length}
             </p>
-            <p className="text-xs text-muted-foreground">Sections without findings</p>
+            <p className="text-xs text-muted-foreground">Sections marked reviewed</p>
           </div>
         </CardContent>
       </Card>
@@ -579,6 +614,20 @@ export function ReportView({
           {sections.map((section, index) => {
             const issueCount = visibleGuidedIssues.filter((issue) => issue.sectionKey === section.key).length;
             const isActive = section.key === (activeKey || sections[0]?.key);
+            const hasPendingSuggestion = guidedPreview?.sectionKey === section.key;
+            const dismissedCount = Object.entries(issueStatuses).filter(
+              ([issueId, status]) => issueId.startsWith(`${section.key}:`) && status === "dismissed"
+            ).length;
+            const correctedCount = Object.entries(issueStatuses).filter(
+              ([issueId, status]) => issueId.startsWith(`${section.key}:`) && (status === "applied" || status === "resolved")
+            ).length;
+            const sectionStatus = hasPendingSuggestion
+              ? "Changes awaiting application"
+              : issueCount > 0
+                ? `${issueCount} issue${issueCount === 1 ? "" : "s"} found`
+                : reviewedSections[section.key]
+                  ? "Reviewed"
+                  : "Not reviewed · no open findings";
             return (
               <button
                 key={section.key}
@@ -589,13 +638,22 @@ export function ReportView({
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">{index + 1}. {section.title}</p>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{index + 1}. {section.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {sectionStatus}
+                      {dismissedCount > 0 ? ` · ${dismissedCount} dismissed` : ""}
+                      {correctedCount > 0 ? ` · ${correctedCount} corrected` : ""}
+                    </p>
+                  </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    issueCount > 0
+                    hasPendingSuggestion
+                      ? "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                      : issueCount > 0
                       ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                       : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                   }`}>
-                    {issueCount > 0 ? issueCount : "✓"}
+                    {hasPendingSuggestion ? "Preview" : issueCount > 0 ? issueCount : reviewedSections[section.key] ? "Reviewed" : "Clear"}
                   </span>
                 </div>
               </button>
@@ -765,6 +823,7 @@ export function ReportView({
           const sectionGaps = sectionResult?.compliance_gaps ?? [];
           const expectedPromptItems =
             sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items || [];
+          const responseFormatGuidance = getResponseFormatGuidance(expectedPromptItems);
           const sectionWordLimit = requirements.sections.find((item) => item.key === sec.key)?.word_limit;
           const sectionWordCount = state.working.trim() ? state.working.trim().split(/\s+/).length : 0;
           const reviewItems = extractPromptReviewItems(
@@ -782,6 +841,7 @@ export function ReportView({
           );
           const activeSectionIssue = selectedIssue?.sectionKey === sec.key ? selectedIssue : null;
           const activePreview = guidedPreview?.sectionKey === sec.key ? guidedPreview : null;
+          const sectionOpenIssueCount = visibleGuidedIssues.filter((issue) => issue.sectionKey === sec.key).length;
 
           return (
             <Card
@@ -890,6 +950,9 @@ export function ReportView({
                               setIssueInputs((current) => ({ ...current, [activeSectionIssue.id]: event.target.value }))
                             }
                             rows={3}
+                            spellCheck
+                            autoCorrect="on"
+                            autoCapitalize="sentences"
                             placeholder="Add verified facts, names, dates, figures, or evidence. The assistant will not invent missing information."
                           />
                         </div>
@@ -911,15 +974,23 @@ export function ReportView({
                   )}
 
                   <div className="space-y-3">
+                      <div className="rounded-lg border border-sky-500/25 bg-sky-50/60 p-3 text-sm dark:bg-sky-950/10">
+                        <p className="font-medium text-foreground">Recommended response format</p>
+                        <p className="mt-1 text-muted-foreground">{responseFormatGuidance}</p>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         Version {state.index + 1} of {versionCount}
                       </p>
                       <Textarea
                         value={state.working}
-                        onChange={(e) =>
-                          setSectionState(sec.key, (s) => ({ ...s, working: e.target.value }))
-                        }
+                        onChange={(e) => {
+                          setSectionState(sec.key, (s) => ({ ...s, working: e.target.value }));
+                          setReviewedSections((current) => ({ ...current, [sec.key]: false }));
+                        }}
                         rows={14}
+                        spellCheck
+                        autoCorrect="on"
+                        autoCapitalize="sentences"
                       />
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => saveManualEdit(sec.key)}>
@@ -932,6 +1003,16 @@ export function ReportView({
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => resetWorking(sec.key)}>
                           Reset unsaved
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setReviewedSections((current) => ({ ...current, [sec.key]: true }))}
+                          disabled={sectionOpenIssueCount > 0 || Boolean(activePreview)}
+                          title={sectionOpenIssueCount > 0 ? "Resolve or dismiss open review items first." : undefined}
+                        >
+                          <Check className="mr-2 h-4 w-4" />
+                          {reviewedSections[sec.key] ? "Section reviewed" : "Mark section reviewed"}
                         </Button>
                       </div>
                   </div>
@@ -948,21 +1029,27 @@ export function ReportView({
                         setFreeformInstructions((current) => ({ ...current, [sec.key]: event.target.value }))
                       }
                       rows={3}
+                      spellCheck
+                      autoCorrect="on"
+                      autoCapitalize="sentences"
                       placeholder="Example: Reduce this to 300 words without removing facts or budget figures."
                     />
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {[
-                        "Make this more concise without removing facts.",
-                        "Strengthen community benefit without inventing information.",
-                        "Add measurable outcomes using only the details provided.",
-                      ].map((example) => (
+                      {FREEFORM_EDIT_EXAMPLES.map((example) => (
                         <Button
-                          key={example}
+                          key={example.label}
                           size="sm"
                           variant="outline"
-                          onClick={() => setFreeformInstructions((current) => ({ ...current, [sec.key]: example }))}
+                          onClick={() => {
+                            const instruction = example.label === "Shorten to a word limit"
+                              ? sectionWordLimit
+                                ? `Reduce this section to ${sectionWordLimit} words without removing verified facts, figures, required answers, or budget details.`
+                                : "Make this section more concise without removing verified facts, figures, required answers, or budget details."
+                              : example.instruction;
+                            setFreeformInstructions((current) => ({ ...current, [sec.key]: instruction }));
+                          }}
                         >
-                          {example}
+                          {example.label}
                         </Button>
                       ))}
                     </div>
@@ -994,6 +1081,9 @@ export function ReportView({
                           setGuidedPreview((current) => current ? { ...current, text: event.target.value } : current)
                         }
                         rows={12}
+                        spellCheck
+                        autoCorrect="on"
+                        autoCapitalize="sentences"
                       />
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" onClick={applyGuidedPreview}>
@@ -1071,6 +1161,9 @@ export function ReportView({
                                   }))
                                 }
                                 rows={3}
+                                spellCheck
+                                autoCorrect="on"
+                                autoCapitalize="sentences"
                                 placeholder="Add the answer or facts to include."
                               />
                             </label>
@@ -1408,6 +1501,31 @@ const PRIORITY_WARNING_TYPES = new Set([
   "word_limit_exceeded",
   "below_expected_word_limit",
 ]);
+
+function getResponseFormatGuidance(
+  promptItems: NonNullable<Requirements["sections"][number]["prompt_items"]>
+) {
+  const formatText = promptItems
+    .flatMap((item) => [item.response_style, item.answer_type, item.prompt_type, item.detail_text, item.prompt_text])
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const explicitlyRequestsBullets = /\b(bullet|list|table|milestone|activities|deliverables|work ?plan)\b/.test(formatText);
+  const includesNarrative = promptItems.some((item) =>
+    [item.response_style, item.answer_type].some((value) => String(value || "").includes("narrative"))
+  );
+
+  if (explicitlyRequestsBullets && includesNarrative) {
+    return "Use complete sentences for narrative explanations. Use concise bullets for requested activities, milestones, deliverables, or lists. Follow any explicit format in the grant package.";
+  }
+  if (explicitlyRequestsBullets) {
+    return "Use concise bullets for the requested activities, milestones, deliverables, or list items. Add complete sentences only where explanation is needed, and follow the grant package's explicit format.";
+  }
+  if (includesNarrative) {
+    return "Use complete sentences and connected paragraphs. Bullets are appropriate only for a clear list of activities, milestones, deliverables, or roles.";
+  }
+  return "Use complete sentences by default. Use bullets for genuine lists, and always follow any response format explicitly requested in the grant package.";
+}
 
 function extractPromptReviewItems(
   sectionBody: string,
