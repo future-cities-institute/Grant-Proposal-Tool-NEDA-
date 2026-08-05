@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useForm, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -71,8 +71,8 @@ const schema = z.object({
   cultural_safety: z.string(),
   evidence_note: requiredText("Evidence or supporting data"),
   why_now: requiredText("Why now"),
-  requested_budget: z.coerce.number().min(10000).max(5_000_000),
-  total_project_cost: z.coerce.number().min(0).max(50_000_000),
+  requested_budget: z.coerce.number().min(10000, "Requested funding must be at least $10,000").max(5_000_000),
+  total_project_cost: z.coerce.number().min(0, "Total project cost cannot be negative").max(50_000_000),
   budget_personnel: requiredText("Personnel costs or N/A"),
   budget_professional_services: requiredText("Professional services costs or N/A"),
   budget_equipment_materials: requiredText("Equipment/materials costs or N/A"),
@@ -464,12 +464,13 @@ export function CommunityForm({
   onBack: () => void;
   initialValues?: CommunityFormValues | null;
   onValuesChange?: (values: CommunityFormValues) => void;
-  saveStatus?: "idle" | "saving" | "saved" | "error";
+  saveStatus?: "idle" | "unsaved" | "saving" | "saved" | "error";
   communityProfileUpdatedAt?: string | null;
 }) {
   const [supportingDocNames, setSupportingDocNames] = useState<string[]>([]);
   const [supportingDocError, setSupportingDocError] = useState("");
   const [isParsingSupportingDocs, setIsParsingSupportingDocs] = useState(false);
+  const [demoBackup, setDemoBackup] = useState<CommunityFormValues | null>(null);
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     applicant: true,
     community: false,
@@ -508,7 +509,22 @@ export function CommunityForm({
   ) => (
     <div className="space-y-2">
       <Label htmlFor={name}>{label} *</Label>
-      <Input id={name} type={type} {...register(name)} placeholder={placeholder} />
+      <Input
+        id={name}
+        type={type}
+        {...register(name)}
+        placeholder={placeholder}
+        {...(type === "number"
+          ? {
+              min: name === "requested_budget" ? 10000 : 0,
+              step: "0.01",
+              inputMode: "decimal" as const,
+              onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
+                if (event.key === "-") event.preventDefault();
+              },
+            }
+          : {})}
+      />
       {renderError(name)}
     </div>
   );
@@ -594,6 +610,16 @@ export function CommunityForm({
   };
 
   const loadDemoData = () => {
+    if (!window.confirm("Fill the application fields with example data? Your saved Community Profile will not be changed.")) return;
+    const currentValues = watch() as CommunityFormValues;
+    setDemoBackup(currentValues);
+    const nextValues = { ...currentValues };
+    (["project", "engagement", "evidence", "budget", "supporting"] as SectionKey[]).forEach((sectionKey) => {
+      sectionFields[sectionKey].forEach((field) => {
+        (nextValues as unknown as Record<string, unknown>)[field] =
+          (demoValues as unknown as Record<string, unknown>)[field];
+      });
+    });
     setSupportingDocNames(["demo-community-support-notes.txt"]);
     setSupportingDocError("");
     setOpenSections({
@@ -605,7 +631,15 @@ export function CommunityForm({
       budget: true,
       supporting: true,
     });
-    reset(demoValues);
+    reset(nextValues);
+  };
+
+  const clearDemoData = () => {
+    if (!demoBackup) return;
+    reset(demoBackup);
+    setDemoBackup(null);
+    setSupportingDocNames([]);
+    setSupportingDocError("");
   };
 
   const handleSupportingDocs = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -802,9 +836,14 @@ export function CommunityForm({
           )}
 
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" onClick={loadDemoData} disabled={isSubmitting}>
-              Load demo data
+            <Button type="button" variant="secondary" onClick={loadDemoData} disabled={isSubmitting || Boolean(demoBackup)}>
+              Fill form with example data
             </Button>
+            {demoBackup && (
+              <Button type="button" variant="outline" onClick={clearDemoData} disabled={isSubmitting}>
+                Restore my previous entries
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onBack} disabled={isSubmitting}>
               Back
             </Button>
@@ -823,6 +862,7 @@ export function CommunityForm({
                 className={`self-center text-sm ${saveStatus === "error" ? "text-destructive" : "text-muted-foreground"}`}
                 role="status"
               >
+                {saveStatus === "unsaved" && "Unsaved changes..."}
                 {saveStatus === "saving" && "Saving draft..."}
                 {saveStatus === "saved" && "Draft saved"}
                 {saveStatus === "error" && "Draft could not be saved. Your entries remain in this form."}

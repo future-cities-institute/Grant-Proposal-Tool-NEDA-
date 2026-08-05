@@ -119,9 +119,13 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
   const [activeCommunityProfileId, setActiveCommunityProfileId] = useState<string | null>(null);
   const [activeCommunityProfileSnapshot, setActiveCommunityProfileSnapshot] = useState<Partial<CommunityProfile>>({});
   const [communityFormValues, setCommunityFormValues] = useState<CommunityFormValues | null>(null);
-  const [communitySaveStatus, setCommunitySaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [communitySaveStatus, setCommunitySaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+  const [requirementsSaveStatus, setRequirementsSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+  const [deletedSection, setDeletedSection] = useState<{ section: Requirements["sections"][number]; index: number } | null>(null);
   const communitySaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestCommunitySaveRef = useRef(0);
+  const communityRevisionRef = useRef(0);
+  const requirementsRevisionRef = useRef(0);
   const hydratedProposalRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -165,6 +169,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
     (values: CommunityFormValues) => {
       if (!proposalId) return Promise.resolve(null);
       const saveId = latestCommunitySaveRef.current + 1;
+      const revision = communityRevisionRef.current;
       latestCommunitySaveRef.current = saveId;
       setCommunitySaveStatus("saving");
 
@@ -182,10 +187,14 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       communitySaveChainRef.current = saveTask;
       void saveTask.then(
         () => {
-          if (latestCommunitySaveRef.current === saveId) setCommunitySaveStatus("saved");
+          if (latestCommunitySaveRef.current === saveId && communityRevisionRef.current === revision) {
+            setCommunitySaveStatus("saved");
+          }
         },
         () => {
-          if (latestCommunitySaveRef.current === saveId) setCommunitySaveStatus("error");
+          if (latestCommunitySaveRef.current === saveId && communityRevisionRef.current === revision) {
+            setCommunitySaveStatus("error");
+          }
         }
       );
       return saveTask;
@@ -195,12 +204,41 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
 
   useEffect(() => {
     if (step !== 3 || !proposalId || !communityFormValues) return;
-    setCommunitySaveStatus("saving");
     const timeoutId = window.setTimeout(() => {
       void saveCommunityDraft(communityFormValues);
     }, 1200);
     return () => window.clearTimeout(timeoutId);
   }, [communityFormValues, proposalId, saveCommunityDraft, step]);
+
+  useEffect(() => {
+    const hasPendingChanges =
+      (step === 2 && ["unsaved", "saving", "error"].includes(requirementsSaveStatus)) ||
+      (step === 3 && ["unsaved", "saving", "error"].includes(communitySaveStatus));
+    if (!hasPendingChanges) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [communitySaveStatus, requirementsSaveStatus, step]);
+
+  useEffect(() => {
+    if (step !== 2 || requirementsSaveStatus !== "unsaved" || !proposalId || !requirements) return;
+    const timeoutId = window.setTimeout(() => {
+      const revision = requirementsRevisionRef.current;
+      setRequirementsSaveStatus("saving");
+      void updateSavedProposal(proposalId, { requirements, current_step: 2 }).then(
+        () => {
+          if (requirementsRevisionRef.current === revision) setRequirementsSaveStatus("saved");
+        },
+        () => {
+          if (requirementsRevisionRef.current === revision) setRequirementsSaveStatus("error");
+        }
+      );
+    }, 1000);
+    return () => window.clearTimeout(timeoutId);
+  }, [proposalId, requirements, requirementsSaveStatus, step]);
 
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -387,6 +425,8 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
 
   const handleSectionTitleChange = useCallback(
     (sectionKey: string, title: string) => {
+      requirementsRevisionRef.current += 1;
+      setRequirementsSaveStatus("unsaved");
       setRequirements((prev) => {
         if (!prev) return prev;
         return {
@@ -401,16 +441,34 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
   );
 
   const handleSectionDelete = useCallback((sectionKey: string) => {
-    setRequirements((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        sections: (prev.sections || []).filter((s) => s.key !== sectionKey),
-      };
+    if (!requirements) return;
+    const index = requirements.sections.findIndex((section) => section.key === sectionKey);
+    if (index < 0) return;
+    requirementsRevisionRef.current += 1;
+    setRequirementsSaveStatus("unsaved");
+    setDeletedSection({ section: requirements.sections[index], index });
+    setRequirements({
+      ...requirements,
+      sections: requirements.sections.filter((section) => section.key !== sectionKey),
     });
-  }, []);
+  }, [requirements]);
+
+  const handleSectionRestore = useCallback(() => {
+    if (!deletedSection) return;
+    requirementsRevisionRef.current += 1;
+    setRequirementsSaveStatus("unsaved");
+    setRequirements((prev) => {
+      if (!prev || prev.sections.some((section) => section.key === deletedSection.section.key)) return prev;
+      const sections = [...prev.sections];
+      sections.splice(Math.min(deletedSection.index, sections.length), 0, deletedSection.section);
+      return { ...prev, sections };
+    });
+    setDeletedSection(null);
+  }, [deletedSection]);
 
   const handleSectionAdd = useCallback(() => {
+    requirementsRevisionRef.current += 1;
+    setRequirementsSaveStatus("unsaved");
     setRequirements((prev) => {
       if (!prev) return prev;
       const sections = prev.sections || [];
@@ -613,6 +671,9 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                 onBack={() => setStep(1)}
                 onSectionTitleChange={handleSectionTitleChange}
                 onSectionDelete={handleSectionDelete}
+                onSectionRestore={handleSectionRestore}
+                deletedSectionTitle={deletedSection?.section.title}
+                saveStatus={requirementsSaveStatus}
                 onSectionAdd={handleSectionAdd}
               />
             </motion.div>
@@ -632,7 +693,11 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                 error={generateMutation.error?.message}
                 onBack={() => void handleCommunityBack()}
                 initialValues={communityFormValues}
-                onValuesChange={setCommunityFormValues}
+                onValuesChange={(values) => {
+                  communityRevisionRef.current += 1;
+                  setCommunityFormValues(values);
+                  setCommunitySaveStatus("unsaved");
+                }}
                 saveStatus={communitySaveStatus}
                 communityProfileUpdatedAt={communityProfileQuery.data?.updated_at}
               />

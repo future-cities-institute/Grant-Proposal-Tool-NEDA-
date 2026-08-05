@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { Requirements } from "@/lib/api";
-import { ArrowLeft, ArrowRight, FileText, PencilLine, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileText, PencilLine, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 export function ProposalSections({
   requirements,
@@ -13,6 +13,9 @@ export function ProposalSections({
   onBack,
   onSectionTitleChange,
   onSectionDelete,
+  onSectionRestore,
+  deletedSectionTitle,
+  saveStatus = "idle",
   onSectionAdd,
 }: {
   requirements: Requirements;
@@ -20,6 +23,9 @@ export function ProposalSections({
   onBack: () => void;
   onSectionTitleChange: (sectionKey: string, title: string) => void;
   onSectionDelete: (sectionKey: string) => void;
+  onSectionRestore: () => void;
+  deletedSectionTitle?: string | null;
+  saveStatus?: "idle" | "unsaved" | "saving" | "saved" | "error";
   onSectionAdd: () => void;
 }) {
   const sections = requirements.sections || [];
@@ -45,8 +51,8 @@ export function ProposalSections({
             <div>
               <CardTitle>Proposal requirements</CardTitle>
               <CardDescription className="mt-1">
-                Sections we extracted from the grant posting. You can add community info next
-                and we&apos;ll generate content for each.
+                Review the sections detected in the grant package before continuing. We&apos;ll generate
+                content for each section.
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -60,6 +66,25 @@ export function ProposalSections({
           </div>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 rounded-lg border border-primary/25 bg-primary/5 p-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">What to check</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Rename unclear headings and add any required section that is missing.</li>
+              <li>Review the detected questions and word limits shown under each heading.</li>
+              <li>Remove only sections that are not required by the funder.</li>
+            </ul>
+          </div>
+          {deletedSectionTitle && (
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-foreground">
+                <span className="font-medium">Section deleted:</span> {deletedSectionTitle}
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={onSectionRestore}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Undo deletion
+              </Button>
+            </div>
+          )}
           {showParseWarning && (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
               Document extraction confidence is low ({count} section detected). Consider uploading a cleaner text-based PDF/DOCX, or continue and manually edit the section list.
@@ -229,6 +254,14 @@ export function ProposalSections({
               Continue to community info
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            {saveStatus !== "idle" && (
+              <p className={`self-center text-sm ${saveStatus === "error" ? "text-destructive" : "text-muted-foreground"}`} role="status">
+                {saveStatus === "unsaved" && "Unsaved section changes..."}
+                {saveStatus === "saving" && "Saving section changes..."}
+                {saveStatus === "saved" && "Section changes saved"}
+                {saveStatus === "error" && "Section changes could not be saved. They remain in this browser."}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
