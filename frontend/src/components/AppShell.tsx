@@ -8,6 +8,7 @@ import { useAuth } from "@/components/Providers";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ContactFci } from "@/components/ContactFci";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: FolderOpen },
@@ -66,6 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-2">
+            <ContactFci />
             <ThemeToggle />
             {user ? (
               <Button variant="outline" size="sm" onClick={handleSignOut} disabled={isSigningOut}>

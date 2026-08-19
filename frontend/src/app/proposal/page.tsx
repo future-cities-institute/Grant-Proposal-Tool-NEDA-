@@ -48,6 +48,7 @@ import { ProposalSections } from "@/components/ProposalSections";
 import { ReportView } from "@/components/ReportView";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ContactFci } from "@/components/ContactFci";
 import { copyProposalText, formatProposalText } from "@/lib/proposalClipboard";
 
 const STEPS = [
@@ -560,6 +561,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
               </p>
             )}
           </div>
+          <ContactFci />
           <ThemeToggle />
         </div>
         {/* Stepper */}
