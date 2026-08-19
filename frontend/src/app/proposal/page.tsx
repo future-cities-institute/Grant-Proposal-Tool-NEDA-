@@ -59,7 +59,6 @@ function applicationDetailsFrom(values: CommunityFormValues): Partial<CommunityP
   const reusable = new Set<string>(COMMUNITY_PROFILE_FIELD_KEYS);
   return Object.fromEntries(Object.entries(values).filter(([key]) => !reusable.has(key))) as Partial<CommunityProfile>;
 }
-
 function safestSavedStep(proposal: SavedProposal): number {
   const hasRequirements = Boolean(proposal.requirements);
   const hasProfile = Boolean(proposal.profile || proposal.community_profile_snapshot);
@@ -696,18 +695,19 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
               exit={{ opacity: 0, y: -8 }}
             >
               <ReportView
-                draft={draft}
-                enhanced={enhanced || {}}
+                draft={finalSections.length ? { ...draft, sections: finalSections } : draft}
+                enhanced={finalSections.length ? {} : enhanced || {}}
                 promptCoverage={promptCoverage}
+                structuredAnswers={finalSections.length ? {} : structuredAnswers}
                 validation={validation}
                 requirements={requirements}
                 profile={profile}
                 onContinueToExport={(sections) => {
-                  setFinalSections(buildQuestionFormattedSections(sections, structuredAnswers));
+                  setFinalSections(sections);
                   setStep(5);
                   if (proposalId) {
                     void updateSavedProposal(proposalId, {
-                      final_sections: buildQuestionFormattedSections(sections, structuredAnswers),
+                      final_sections: sections,
                       status: "ready_to_export",
                       current_step: 5,
                     });
@@ -780,51 +780,4 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       </main>
     </div>
   );
-}
-
-function buildQuestionFormattedSections(
-  sections: DraftSection[],
-  structuredAnswers: Record<string, StructuredAnswersSection>
-): DraftSection[] {
-  return sections.map((section) => {
-    const structuredSection = structuredAnswers[section.key];
-    const answers = structuredSection?.answers || [];
-    if (!answers.length) {
-      return section;
-    }
-
-    return {
-      ...section,
-      title: structuredSection.section_title || section.title,
-      body: answers
-        .map((answer) => {
-          const promptId = answer.prompt_id?.trim();
-          const promptText = answer.prompt_text?.trim();
-          if (!promptId || !promptText) return "";
-          return `${promptId}: ${promptText}\n${normalizeStructuredExportAnswer(answer.answer)}`;
-        })
-        .filter(Boolean)
-        .join("\n\n"),
-    };
-  });
-}
-
-function normalizeStructuredExportAnswer(value: string) {
-  const raw = String(value || "").trim();
-  if (!raw) return "Needs additional information.";
-
-  const pythonListMatch = raw.match(/^\[([\s\S]*)\]$/);
-  if (pythonListMatch) {
-    const items = Array.from(raw.matchAll(/'([^']+)'|"([^"]+)"/g))
-      .map((match) => (match[1] || match[2] || "").trim())
-      .filter(Boolean);
-    if (items.length) {
-      return items.map((item) => `- ${item}`).join("\n");
-    }
-  }
-
-  return raw
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\s+\./g, ".")
-    .trim();
 }

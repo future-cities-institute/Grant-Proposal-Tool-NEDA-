@@ -15,6 +15,7 @@ import {
   type DraftSection,
   type PromptCoverageSection,
   type Requirements,
+  type StructuredAnswersSection,
   evaluateSectionCompliance,
   rewriteSection,
 } from "@/lib/api";
@@ -69,6 +70,7 @@ export function ReportView({
   draft,
   enhanced,
   promptCoverage,
+  structuredAnswers,
   validation,
   requirements,
   profile,
@@ -77,6 +79,7 @@ export function ReportView({
   draft: Draft;
   enhanced: Record<string, string>;
   promptCoverage: Record<string, PromptCoverageSection>;
+  structuredAnswers: Record<string, StructuredAnswersSection>;
   validation: ComplianceSummary | null;
   requirements: Requirements;
   profile: CommunityProfile;
@@ -103,7 +106,12 @@ export function ReportView({
   useEffect(() => {
     const initial: Record<string, SectionEditorState> = {};
     for (const sec of sections) {
-      const baseText = stripPromptMetadataLines(enhanced[sec.key] || sec.body || "");
+      const promptItems = sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items;
+      const baseText = buildQuestionResponseText(
+        { ...sec, prompt_items: promptItems },
+        structuredAnswers[sec.key],
+        stripPromptMetadataLines(enhanced[sec.key] || sec.body || "")
+      );
       initial[sec.key] = {
         versions: [baseText],
         index: 0,
@@ -118,7 +126,7 @@ export function ReportView({
       setActiveKey(sections[0].key);
     }
     setSectionStates(initial);
-  }, [sections, enhanced]);
+  }, [sections, enhanced, structuredAnswers, requirements.sections]);
 
   useEffect(() => {
     setLiveValidation(validation);
@@ -267,6 +275,7 @@ export function ReportView({
 
   const jumpToSection = (key: string) => {
     openSection(key);
+    setSelectedIssueId(visibleGuidedIssues.find((issue) => issue.sectionKey === key)?.id || null);
     window.setTimeout(() => {
       sectionRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 120);
@@ -615,19 +624,13 @@ export function ReportView({
             const issueCount = visibleGuidedIssues.filter((issue) => issue.sectionKey === section.key).length;
             const isActive = section.key === (activeKey || sections[0]?.key);
             const hasPendingSuggestion = guidedPreview?.sectionKey === section.key;
-            const dismissedCount = Object.entries(issueStatuses).filter(
-              ([issueId, status]) => issueId.startsWith(`${section.key}:`) && status === "dismissed"
-            ).length;
-            const correctedCount = Object.entries(issueStatuses).filter(
-              ([issueId, status]) => issueId.startsWith(`${section.key}:`) && (status === "applied" || status === "resolved")
-            ).length;
             const sectionStatus = hasPendingSuggestion
-              ? "Changes awaiting application"
+              ? "Needs review"
               : issueCount > 0
-                ? `${issueCount} issue${issueCount === 1 ? "" : "s"} found`
+                ? `${issueCount} issue${issueCount === 1 ? "" : "s"}`
                 : reviewedSections[section.key]
-                  ? "Reviewed"
-                  : "Not reviewed · no open findings";
+                  ? "Complete"
+                  : "Needs review";
             return (
               <button
                 key={section.key}
@@ -642,8 +645,6 @@ export function ReportView({
                     <p className="text-sm font-medium text-foreground">{index + 1}. {section.title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {sectionStatus}
-                      {dismissedCount > 0 ? ` · ${dismissedCount} dismissed` : ""}
-                      {correctedCount > 0 ? ` · ${correctedCount} corrected` : ""}
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -653,7 +654,7 @@ export function ReportView({
                       ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                       : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                   }`}>
-                    {hasPendingSuggestion ? "Preview" : issueCount > 0 ? issueCount : reviewedSections[section.key] ? "Reviewed" : "Clear"}
+                    {hasPendingSuggestion ? "Review" : issueCount > 0 ? issueCount : reviewedSections[section.key] ? "Complete" : "Review"}
                   </span>
                 </div>
               </button>
@@ -662,7 +663,7 @@ export function ReportView({
         </CardContent>
       </Card>
 
-      <Card className="border-primary/35">
+      <Card className="hidden">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -824,6 +825,7 @@ export function ReportView({
           const expectedPromptItems =
             sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items || [];
           const responseFormatGuidance = getResponseFormatGuidance(expectedPromptItems);
+          const hasQuestionResponseView = hasQuestionResponseStructure(state.working, expectedPromptItems);
           const sectionWordLimit = requirements.sections.find((item) => item.key === sec.key)?.word_limit;
           const sectionWordCount = state.working.trim() ? state.working.trim().split(/\s+/).length : 0;
           const reviewItems = extractPromptReviewItems(
@@ -841,7 +843,8 @@ export function ReportView({
           );
           const activeSectionIssue = selectedIssue?.sectionKey === sec.key ? selectedIssue : null;
           const activePreview = guidedPreview?.sectionKey === sec.key ? guidedPreview : null;
-          const sectionOpenIssueCount = visibleGuidedIssues.filter((issue) => issue.sectionKey === sec.key).length;
+          const sectionIssues = visibleGuidedIssues.filter((issue) => issue.sectionKey === sec.key);
+          const sectionOpenIssueCount = sectionIssues.length;
 
           return (
             <Card
@@ -856,9 +859,8 @@ export function ReportView({
                   className="flex w-full items-center justify-between text-left"
                   onClick={() => toggleOpen(sec.key)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <CardTitle className="text-base">{sec.title}</CardTitle>
-                    <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                         sectionWordLimit && sectionWordCount > sectionWordLimit
                           ? "border-rose-500/40 bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"
@@ -868,37 +870,15 @@ export function ReportView({
                           ? `${sectionWordCount} / ${sectionWordLimit} words`
                           : `${sectionWordCount} words · no explicit limit`}
                       </span>
-                      <span
-                        className={
-                          sectionGaps.length > 0
-                            ? "rounded-full border border-rose-500/40 bg-rose-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"
-                            : "rounded-full border border-emerald-500/30 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300"
-                        }
-                      >
-                        {sectionGaps.length > 0 ? `${sectionGaps.length} gap${sectionGaps.length === 1 ? "" : "s"}` : "no gaps"}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        sectionOpenIssueCount > 0
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                      }`}>
+                        {sectionOpenIssueCount > 0
+                          ? `${sectionOpenIssueCount} issue${sectionOpenIssueCount === 1 ? "" : "s"}`
+                          : "No open issues"}
                       </span>
-                      <span
-                        className={
-                          sectionWarnings.length > 0
-                            ? "rounded-full border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-950/20 dark:text-amber-300"
-                            : "rounded-full border border-sky-500/30 bg-sky-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950/20 dark:text-sky-300"
-                        }
-                      >
-                        {sectionWarnings.length > 0
-                          ? `${sectionWarnings.length} warning${sectionWarnings.length === 1 ? "" : "s"}`
-                          : "no warnings"}
-                      </span>
-                      {missingPrompts.length > 0 && (
-                        <span className="rounded-full border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-950/20 dark:text-amber-300">
-                          {missingPrompts.length} missing
-                        </span>
-                      )}
-                      {needsReviewPrompts.length > 0 && (
-                        <span className="rounded-full border border-violet-500/40 bg-violet-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:bg-violet-950/20 dark:text-violet-300">
-                          {needsReviewPrompts.length} review
-                        </span>
-                      )}
-                    </div>
                   </div>
                   {state.isOpen ? (
                     <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -909,11 +889,40 @@ export function ReportView({
               </CardHeader>
               {state.isOpen && (
                 <CardContent className="space-y-4">
+                  {sectionIssues.length > 0 && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-50/50 p-3 dark:bg-amber-950/10">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Issues to resolve</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Select an issue to see exactly what information or change is needed.</p>
+                        </div>
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">{sectionIssues.length} open</span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {sectionIssues.map((issue) => (
+                          <button
+                            key={issue.id}
+                            type="button"
+                            className={`flex w-full items-start justify-between gap-3 rounded-md border p-3 text-left ${
+                              selectedIssueId === issue.id ? "border-primary/50 bg-background" : "border-border bg-background/60"
+                            }`}
+                            onClick={() => setSelectedIssueId(issue.id)}
+                          >
+                            <span>
+                              <span className="block text-sm font-medium text-foreground">{issue.title}</span>
+                              <span className="mt-1 block text-xs text-muted-foreground">{issue.recommendedAction}</span>
+                            </span>
+                            <span className="shrink-0 text-xs font-medium text-primary">Review</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {activeSectionIssue && (
                     <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Selected issue</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Issue to resolve</p>
                           <p className="mt-2 font-medium text-foreground">{activeSectionIssue.title}</p>
                           <p className="mt-1 text-sm text-muted-foreground">{activeSectionIssue.explanation}</p>
                         </div>
@@ -964,7 +973,7 @@ export function ReportView({
                           disabled={isBusy || !activeSectionIssue.canSuggestRewrite}
                         >
                           {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                          {isBusy ? "Generating..." : "Preview correction"}
+                          {isBusy ? "Generating..." : "Generate suggested fix"}
                         </Button>
                         {!activeSectionIssue.canSuggestRewrite && (
                           <p className="self-center text-xs text-muted-foreground">Add the missing content manually before requesting a rewrite.</p>
@@ -974,9 +983,21 @@ export function ReportView({
                   )}
 
                   <div className="space-y-3">
-                      <div className="rounded-lg border border-sky-500/25 bg-sky-50/60 p-3 text-sm dark:bg-sky-950/10">
-                        <p className="font-medium text-foreground">Recommended response format</p>
-                        <p className="mt-1 text-muted-foreground">{responseFormatGuidance}</p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="font-medium text-foreground">
+                            {hasQuestionResponseView ? "Questions and responses" : "Section response"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {hasQuestionResponseView
+                              ? "Questions are kept in the text so you can read and edit the full section in one continuous view. Edit the response beneath each question."
+                              : "Question-to-answer mapping was not reliable enough to split this section. The original section text is preserved."}
+                          </p>
+                        </div>
+                        <details className="text-xs text-muted-foreground">
+                          <summary className="cursor-pointer select-none font-medium text-primary">Formatting guidance</summary>
+                          <p className="mt-2 max-w-md rounded-md border border-border bg-muted/30 p-2">{responseFormatGuidance}</p>
+                        </details>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Version {state.index + 1} of {versionCount}
@@ -987,7 +1008,7 @@ export function ReportView({
                           setSectionState(sec.key, (s) => ({ ...s, working: e.target.value }));
                           setReviewedSections((current) => ({ ...current, [sec.key]: false }));
                         }}
-                        rows={14}
+                        rows={hasQuestionResponseView ? 20 : 14}
                         spellCheck
                         autoCorrect="on"
                         autoCapitalize="sentences"
@@ -995,14 +1016,14 @@ export function ReportView({
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={() => saveManualEdit(sec.key)}>
                           <Save className="mr-2 h-4 w-4" />
-                          Save manual edit
+                          Save changes
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => undoEdit(sec.key)} disabled={state.index === 0}>
                           <RotateCcw className="mr-2 h-4 w-4" />
                           Undo
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => resetWorking(sec.key)}>
-                          Reset unsaved
+                          Discard unsaved changes
                         </Button>
                         <Button
                           size="sm"
@@ -1017,10 +1038,14 @@ export function ReportView({
                       </div>
                   </div>
 
-                  <div className="rounded-lg border border-border bg-muted/20 p-4">
-                    <p className="text-sm font-medium text-foreground">Ask AI to revise this section</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Describe a change outside the guided issues. You will preview the result before applying it.
+                  <details className="rounded-lg border border-border bg-muted/20">
+                    <summary className="cursor-pointer select-none p-4 text-sm font-medium text-foreground">
+                      More editing options
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">Optional AI rewrite for the entire section</span>
+                    </summary>
+                    <div className="border-t border-border p-4">
+                    <p className="text-xs text-muted-foreground">
+                      This may revise multiple answers. The current section will not change until you review and apply the preview.
                     </p>
                     <Textarea
                       className="mt-3"
@@ -1061,9 +1086,10 @@ export function ReportView({
                       disabled={isBusy}
                     >
                       {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                      {isBusy ? "Generating..." : "Preview rewrite"}
+                      {isBusy ? "Generating..." : "Generate rewrite preview"}
                     </Button>
-                  </div>
+                    </div>
+                  </details>
 
                   {activePreview && (
                     <div className="rounded-lg border border-emerald-500/35 bg-emerald-50/70 p-4 dark:bg-emerald-950/10">
@@ -1110,7 +1136,7 @@ export function ReportView({
                     <p className="text-sm text-destructive">{sectionError}</p>
                   )}
 
-                  {lowConfidencePrompts.length > 0 && (
+                  {false && lowConfidencePrompts.length > 0 && (
                     <div className="rounded-lg border border-violet-500/35 bg-violet-50/90 p-3 dark:bg-violet-950/20">
                       <p className="text-sm font-medium text-violet-800 dark:text-violet-200">
                         Low-confidence answers to review ({lowConfidencePrompts.length})
@@ -1129,7 +1155,7 @@ export function ReportView({
                     </div>
                   )}
 
-                  {actionablePromptItems.length > 0 && (
+                  {false && actionablePromptItems.length > 0 && (
                     <details className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3 dark:bg-amber-950/20">
                       <summary className="cursor-pointer select-none text-sm font-medium">
                         Review / missing info editor ({actionablePromptItems.length})
@@ -1205,7 +1231,7 @@ export function ReportView({
                     </details>
                   )}
 
-                  {(sectionWarnings.length > 0 || sectionGaps.length > 0) && (
+                  {false && (sectionWarnings.length > 0 || sectionGaps.length > 0) && (
                     <div className="grid gap-4 lg:grid-cols-2">
                       {priorityWarnings.length > 0 && (
                         <div className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3 dark:bg-amber-950/20 lg:col-span-2">
@@ -1525,6 +1551,67 @@ function getResponseFormatGuidance(
     return "Use complete sentences and connected paragraphs. Bullets are appropriate only for a clear list of activities, milestones, deliverables, or roles.";
   }
   return "Use complete sentences by default. Use bullets for genuine lists, and always follow any response format explicitly requested in the grant package.";
+}
+
+function buildQuestionResponseText(
+  section: DraftSection,
+  structuredSection: StructuredAnswersSection | undefined,
+  fallbackText: string
+) {
+  const promptItems = section.prompt_items || [];
+  const answers = structuredSection?.answers || [];
+  if (!promptItems.length || !answers.length) return fallbackText;
+
+  const answersById = new Map(
+    answers
+      .filter((answer) => answer.prompt_id?.trim())
+      .map((answer) => [answer.prompt_id.trim(), answer])
+  );
+  const expectedIds = promptItems.map((item) => String(item.prompt_id || "").trim()).filter(Boolean);
+  const hasReliableMap = expectedIds.length > 0 && expectedIds.every((promptId) => answersById.has(promptId));
+  if (!hasReliableMap) return fallbackText;
+
+  return promptItems
+    .map((prompt) => {
+      const promptId = String(prompt.prompt_id || "").trim();
+      const promptText = String(prompt.prompt_text || "").trim();
+      if (!promptId || !promptText) return "";
+      const answer = normalizeQuestionAnswer(answersById.get(promptId)?.answer || "");
+      return `${promptId}: ${promptText}\n${answer || "[Missing information needed]"}`;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function normalizeQuestionAnswer(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const pythonListMatch = raw.match(/^\[([\s\S]*)\]$/);
+  if (pythonListMatch) {
+    const items = Array.from(raw.matchAll(/'([^']+)'|"([^"]+)"/g))
+      .map((match) => (match[1] || match[2] || "").trim())
+      .filter(Boolean);
+    if (items.length) return items.map((item) => `- ${item}`).join("\n");
+  }
+  return raw
+    .replace(/^Answer:\s*/i, "")
+    .replace(/^Confidence:\s*(high|medium|low)\s*$/gim, "")
+    .replace(/^Needs review:\s*.*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function hasQuestionResponseStructure(
+  text: string,
+  promptItems: NonNullable<Requirements["sections"][number]["prompt_items"]>
+) {
+  const promptIds = promptItems.map((item) => String(item.prompt_id || "").trim()).filter(Boolean);
+  if (!promptIds.length) return false;
+  return promptIds.every((promptId) => new RegExp(`(^|\\n)\\s*${escapeRegExp(promptId)}\\s*:`, "i").test(text));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function extractPromptReviewItems(
