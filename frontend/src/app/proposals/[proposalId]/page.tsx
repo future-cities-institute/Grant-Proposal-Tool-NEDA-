@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, CalendarClock, Download, FileText, History, Loader2, PencilLine, Plus } from "lucide-react";
+import { AlertCircle, ArrowLeft, CalendarClock, Check, Clipboard, Download, FileText, History, Loader2, PencilLine, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   duplicateSavedProposal,
+  exportDraftDocx,
   exportDraftPdf,
   getSavedProposal,
   markSavedProposalExported,
   type DraftSection,
 } from "@/lib/api";
+import { copyProposalText, formatProposalText } from "@/lib/proposalClipboard";
+import { useState } from "react";
 
 export default function ProposalDetailPage({ params }: { params: { proposalId: string } }) {
   const router = useRouter();
@@ -26,6 +29,7 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
   const versions = buildVersionHistory(proposal);
   const exportSections = buildExportSections(proposal);
   const hasExportableDraft = exportSections.length > 0;
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const exportMutation = useMutation({
     mutationFn: async () => {
       if (!proposal || exportSections.length === 0) throw new Error("This proposal does not have an exportable draft yet.");
@@ -54,6 +58,27 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
       });
     },
   });
+  const docxExportMutation = useMutation({
+    mutationFn: async () => {
+      if (!proposal || exportSections.length === 0) throw new Error("This proposal does not have an exportable draft yet.");
+      const profile = { ...(proposal.community_profile_snapshot || {}), ...(proposal.application_details || {}), ...(proposal.profile || {}) };
+      return exportDraftDocx({
+        grant_name: proposal.grant_name || proposal.requirements?.grant_name || "",
+        community_name: proposal.community_name || profile.community_name || "",
+        region: profile.region || "",
+        local_priority: profile.local_priority || "",
+        requested_budget: profile.requested_budget,
+        sections: exportSections,
+      });
+    },
+    onSuccess: (blob) => {
+      downloadBlob(blob, `${safeDownloadName(proposal?.title || "grant_proposal")}.docx`);
+      void markSavedProposalExported(params.proposalId).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["saved-proposal", params.proposalId] });
+        void queryClient.invalidateQueries({ queryKey: ["saved-proposals"] });
+      });
+    },
+  });
   const duplicateMutation = useMutation({
     mutationFn: () => duplicateSavedProposal(params.proposalId),
     onSuccess: (copy) => {
@@ -61,6 +86,26 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
       router.push(`/proposals/${copy.id}`);
     },
   });
+
+  const copySavedProposal = async () => {
+    if (!proposal) return;
+    const profile = { ...(proposal.community_profile_snapshot || {}), ...(proposal.application_details || {}), ...(proposal.profile || {}) };
+    try {
+      await copyProposalText(
+        formatProposalText({
+          grantName: proposal.grant_name || proposal.requirements?.grant_name,
+          communityName: proposal.community_name || profile.community_name,
+          region: profile.region,
+          requestedBudget: profile.requested_budget,
+          sections: exportSections,
+        })
+      );
+      setCopyStatus("copied");
+      window.setTimeout(() => setCopyStatus("idle"), 2500);
+    } catch {
+      setCopyStatus("error");
+    }
+  };
 
   return (
     <AppShell>
@@ -88,8 +133,24 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
               </Button>
             </Link>
             <Button
+              variant="outline"
+              onClick={() => void copySavedProposal()}
+              disabled={!proposal || !hasExportableDraft || exportMutation.isPending || docxExportMutation.isPending}
+            >
+              {copyStatus === "copied" ? <Check className="mr-2 h-4 w-4" /> : <Clipboard className="mr-2 h-4 w-4" />}
+              {copyStatus === "copied" ? "Copied" : "Copy proposal text"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => docxExportMutation.mutate()}
+              disabled={!proposal || !hasExportableDraft || docxExportMutation.isPending || exportMutation.isPending}
+            >
+              {docxExportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+              {docxExportMutation.isPending ? "Preparing DOCX..." : hasExportableDraft ? "Download DOCX" : "No draft available"}
+            </Button>
+            <Button
               onClick={() => exportMutation.mutate()}
-              disabled={!proposal || !hasExportableDraft || exportMutation.isPending}
+              disabled={!proposal || !hasExportableDraft || exportMutation.isPending || docxExportMutation.isPending}
             >
               {exportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
               {exportMutation.isPending ? "Preparing PDF..." : hasExportableDraft ? "Download latest PDF" : "No draft available"}
@@ -97,10 +158,12 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
           </div>
         </div>
 
-        {(exportMutation.isError || duplicateMutation.isError) && (
+        {(exportMutation.isError || docxExportMutation.isError || duplicateMutation.isError || copyStatus === "error") && (
           <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             <AlertCircle className="h-4 w-4" />
-            {(exportMutation.error || duplicateMutation.error)?.message || "The action could not be completed."}
+            {copyStatus === "error"
+              ? "The proposal could not be copied. Check your browser permissions and try again."
+              : (exportMutation.error || docxExportMutation.error || duplicateMutation.error)?.message || "The action could not be completed."}
           </p>
         )}
 
@@ -108,7 +171,7 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
           <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-foreground">
             <p className="font-medium">This record contains a reviewed grant package, but no generated proposal draft yet.</p>
             <p className="mt-1 text-muted-foreground">
-              Select Continue editing, complete the application details, and generate the report before downloading a proposal PDF.
+              Select Continue editing, complete the application details, and generate the report before exporting the proposal.
             </p>
           </div>
         )}
@@ -215,6 +278,17 @@ function buildExportSections(proposal?: Awaited<ReturnType<typeof getSavedPropos
 
 function safeDownloadName(value: string) {
   return value.trim().replace(/[^a-z0-9-_]+/gi, "_").replace(/^_+|_+$/g, "") || "grant_proposal";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 function buildVersionHistory(proposal?: Awaited<ReturnType<typeof getSavedProposal>>) {

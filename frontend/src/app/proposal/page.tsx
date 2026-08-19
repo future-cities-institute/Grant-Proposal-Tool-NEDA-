@@ -11,6 +11,7 @@ import {
   Loader2,
   Upload,
   AlertCircle,
+  Clipboard,
   Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
   type PromptCoverageSection,
   type StructuredAnswersSection,
   exportDraftPdf,
+  exportDraftDocx,
   createSavedProposal,
   updateSavedProposal,
   markSavedProposalExported,
@@ -46,6 +48,7 @@ import { ProposalSections } from "@/components/ProposalSections";
 import { ReportView } from "@/components/ReportView";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { copyProposalText, formatProposalText } from "@/lib/proposalClipboard";
 
 const STEPS = [
   { id: 1, label: "Upload grant package" },
@@ -88,6 +91,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
   const [validation, setValidation] = useState<ComplianceSummary | null>(null);
   const [finalSections, setFinalSections] = useState<DraftSection[]>([]);
   const [exportError, setExportError] = useState<string>("");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [activeCommunityProfileId, setActiveCommunityProfileId] = useState<string | null>(null);
   const [activeCommunityProfileSnapshot, setActiveCommunityProfileSnapshot] = useState<Partial<CommunityProfile>>({});
@@ -249,6 +253,52 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       setExportError(err instanceof Error ? err.message : "Export failed.");
     },
   });
+
+  const docxExportMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile || !requirements || finalSections.length === 0) {
+        throw new Error("No finalized draft content to export.");
+      }
+      return exportDraftDocx({
+        grant_name: requirements.grant_name || "",
+        community_name: profile.community_name || "",
+        region: profile.region || "",
+        local_priority: profile.local_priority || "",
+        requested_budget: profile.requested_budget,
+        sections: finalSections.map((section) => ({
+          key: section.key,
+          title: section.title,
+          body: section.body,
+        })),
+      });
+    },
+    onSuccess: (blob) => {
+      downloadBlob(blob, "grant_proposal.docx");
+      setExportError("");
+      if (proposalId) void markSavedProposalExported(proposalId);
+    },
+    onError: (error) => {
+      setExportError(error instanceof Error ? error.message : "DOCX export failed.");
+    },
+  });
+
+  const copyFinalProposal = async () => {
+    try {
+      await copyProposalText(
+        formatProposalText({
+          grantName: requirements?.grant_name,
+          communityName: profile?.community_name,
+          region: profile?.region,
+          requestedBudget: profile?.requested_budget,
+          sections: finalSections,
+        })
+      );
+      setCopyStatus("copied");
+      window.setTimeout(() => setCopyStatus("idle"), 2500);
+    } catch {
+      setCopyStatus("error");
+    }
+  };
 
   const parseMutation = useMutation({
     mutationFn: (file: File) => parseGrant(file),
@@ -730,8 +780,8 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                 <CardHeader>
                   <CardTitle>Final export</CardTitle>
                   <CardDescription>
-                    Download a polished PDF version of your proposal. You can go back to the
-                    editor if you want to make more section changes first.
+                    Copy the finalized proposal text or download it as a PDF or editable DOCX file.
+                    You can return to the editor to make additional section changes first.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -754,11 +804,38 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                     </div>
                   )}
 
+                  {copyStatus === "error" && (
+                    <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      The proposal could not be copied. Check your browser permissions and try again.
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-3">
-                    <Button variant="outline" onClick={() => setStep(4)} disabled={exportMutation.isPending}>
+                    <Button variant="outline" onClick={() => setStep(4)} disabled={exportMutation.isPending || docxExportMutation.isPending}>
                       Back to editor
                     </Button>
-                    <Button onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending || finalSections.length === 0}>
+                    <Button
+                      variant="outline"
+                      onClick={() => void copyFinalProposal()}
+                      disabled={finalSections.length === 0 || exportMutation.isPending || docxExportMutation.isPending}
+                    >
+                      {copyStatus === "copied" ? <Check className="mr-2 h-4 w-4" /> : <Clipboard className="mr-2 h-4 w-4" />}
+                      {copyStatus === "copied" ? "Copied to clipboard" : "Copy proposal text"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => docxExportMutation.mutate()}
+                      disabled={docxExportMutation.isPending || exportMutation.isPending || finalSections.length === 0}
+                    >
+                      {docxExportMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="mr-2 h-4 w-4" />
+                      )}
+                      {docxExportMutation.isPending ? "Preparing DOCX..." : "Download DOCX"}
+                    </Button>
+                    <Button onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending || docxExportMutation.isPending || finalSections.length === 0}>
                       {exportMutation.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -780,4 +857,15 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       </main>
     </div>
   );
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
