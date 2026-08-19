@@ -4,41 +4,48 @@
 
 @layer base {
   :root {
-    --background: 200 27% 98%;
-    --foreground: 212 40% 14%;
+    /* NEDA-inspired palette: blue #075b8f, crimson #c81045, gold #f5b51b. */
+    --neda-blue: 203 91% 29%;
+    --neda-crimson: 342 85% 42%;
+    --neda-gold: 42 91% 53%;
+    --background: 210 25% 98%;
+    --foreground: 211 42% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 212 40% 14%;
-    --primary: 180 67% 31%;
+    --card-foreground: 211 42% 14%;
+    --primary: var(--neda-blue);
     --primary-foreground: 0 0% 100%;
-    --secondary: 196 33% 94%;
-    --secondary-foreground: 212 40% 16%;
-    --muted: 197 23% 93%;
-    --muted-foreground: 215 15% 40%;
-    --accent: 190 38% 92%;
-    --accent-foreground: 212 40% 16%;
-    --destructive: 0 72% 47%;
-    --border: 198 23% 86%;
-    --input: 198 23% 86%;
-    --ring: 180 67% 31%;
+    --secondary: 204 44% 93%;
+    --secondary-foreground: 203 80% 24%;
+    --muted: 210 24% 94%;
+    --muted-foreground: 211 15% 39%;
+    --accent: 43 92% 92%;
+    --accent-foreground: 211 42% 18%;
+    --destructive: var(--neda-crimson);
+    --border: 207 24% 85%;
+    --input: 207 24% 85%;
+    --ring: var(--neda-blue);
     --radius: 0.75rem;
   }
   .dark {
+    --neda-blue: 202 82% 58%;
+    --neda-crimson: 342 82% 62%;
+    --neda-gold: 43 91% 60%;
     --background: 210 32% 9%;
     --foreground: 204 30% 94%;
     --card: 210 30% 11%;
     --card-foreground: 204 30% 94%;
-    --primary: 180 60% 44%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 24% 17%;
+    --primary: var(--neda-blue);
+    --primary-foreground: 211 45% 10%;
+    --secondary: 207 30% 18%;
     --secondary-foreground: 204 30% 94%;
     --muted: 210 22% 16%;
     --muted-foreground: 210 16% 68%;
-    --accent: 210 22% 18%;
-    --accent-foreground: 204 30% 94%;
-    --destructive: 0 64% 42%;
+    --accent: 42 35% 19%;
+    --accent-foreground: 43 80% 88%;
+    --destructive: var(--neda-crimson);
     --border: 210 19% 24%;
     --input: 210 19% 24%;
-    --ring: 180 60% 44%;
+    --ring: var(--neda-blue);
   }
 }
 
@@ -51,13 +58,14 @@
   }
 }
 
-/* Subtle gradient like the reference */
+/* Soft NEDA brand atmosphere while keeping the workspace predominantly white. */
 .gradient-bg {
-  background: radial-gradient(1000px 500px at 15% -20%, hsl(187 64% 93%) 0%, transparent 60%),
-    linear-gradient(180deg, hsl(200 27% 98%) 0%, hsl(194 28% 96%) 100%);
+  background: radial-gradient(900px 460px at 12% -18%, hsl(43 92% 88% / 0.72) 0%, transparent 62%),
+    radial-gradient(900px 460px at 95% -18%, hsl(204 72% 91% / 0.72) 0%, transparent 60%),
+    linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 25% 98%) 100%);
 }
 .dark .gradient-bg {
-  background: radial-gradient(1000px 500px at 15% -20%, hsl(189 58% 21%) 0%, transparent 60%),
+  background: radial-gradient(1000px 500px at 15% -20%, hsl(203 70% 23%) 0%, transparent 60%),
     linear-gradient(180deg, hsl(210 32% 9%) 0%, hsl(216 30% 8%) 100%);
 }
 
@@ -81,7 +89,7 @@
   height: 380px;
   left: -80px;
   top: -110px;
-  background: radial-gradient(circle, hsl(290 90% 60% / 0.24) 0%, hsl(290 90% 60% / 0) 70%);
+  background: radial-gradient(circle, hsl(42 91% 53% / 0.14) 0%, hsl(42 91% 53% / 0) 70%);
 }
 
 .app-neon-bg::after {
@@ -89,13 +97,13 @@
   height: 460px;
   right: -120px;
   top: -120px;
-  background: radial-gradient(circle, hsl(195 90% 55% / 0.2) 0%, hsl(220 90% 55% / 0) 70%);
+  background: radial-gradient(circle, hsl(203 91% 35% / 0.14) 0%, hsl(203 91% 35% / 0) 70%);
 }
 
 .dark .app-neon-bg::before {
-  background: radial-gradient(circle, hsl(290 90% 60% / 0.35) 0%, hsl(290 90% 60% / 0) 70%);
+  background: radial-gradient(circle, hsl(42 91% 53% / 0.16) 0%, hsl(42 91% 53% / 0) 70%);
 }
 
 .dark .app-neon-bg::after {
-  background: radial-gradient(circle, hsl(195 90% 55% / 0.28) 0%, hsl(220 90% 55% / 0) 70%);
+  background: radial-gradient(circle, hsl(203 82% 58% / 0.2) 0%, hsl(203 82% 58% / 0) 70%);
 }

@@ -13,6 +13,11 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        neda: {
+          blue: "hsl(var(--neda-blue))",
+          crimson: "hsl(var(--neda-crimson))",
+          gold: "hsl(var(--neda-gold))",
+        },
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         primary: {

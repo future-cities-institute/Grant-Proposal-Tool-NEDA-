@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="mx-auto flex h-16 w-full max-w-[1760px] items-center gap-4 px-4 sm:px-6 lg:px-8">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-neda-gold/60 bg-neda-gold/15">
               <FileText className="h-5 w-5 text-primary" />
             </div>
             <div className="hidden min-w-0 sm:block">

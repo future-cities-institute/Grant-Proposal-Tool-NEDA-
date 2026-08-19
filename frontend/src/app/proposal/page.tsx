@@ -573,7 +573,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium",
                     step > s.id
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-neda-gold text-slate-900"
                       : step === s.id
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground"
@@ -593,7 +593,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                   <div
                     className={cn(
                       "mx-1 h-0.5 w-6 rounded",
-                      step > s.id ? "bg-primary" : "bg-muted"
+                      step > s.id ? "bg-neda-gold" : "bg-muted"
                     )}
                   />
                 )}

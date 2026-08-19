@@ -42,10 +42,10 @@ export function LoginScreen() {
     <div className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-48px)] w-full max-w-[1760px] flex-col overflow-hidden rounded-2xl border border-border bg-card/80 shadow-xl lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <section className="relative flex min-h-[560px] flex-col justify-between overflow-hidden border-b border-border bg-primary/5 p-6 sm:p-10 lg:border-b-0 lg:border-r">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(20,184,166,0.20),transparent_32%),radial-gradient(circle_at_90%_20%,rgba(59,130,246,0.14),transparent_30%),radial-gradient(circle_at_55%_95%,rgba(16,185,129,0.14),transparent_34%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(245,181,27,0.18),transparent_32%),radial-gradient(circle_at_90%_20%,rgba(7,91,143,0.14),transparent_30%),radial-gradient(circle_at_55%_95%,rgba(200,16,69,0.08),transparent_34%)]" />
           <div className="relative">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/30 bg-background/70 text-primary">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neda-gold/60 bg-neda-gold/15 text-primary">
                 <FileText className="h-6 w-6" />
               </div>
               <div>
