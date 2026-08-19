@@ -56,16 +56,6 @@ type GuidedRewritePreview = {
   clearMissingInputs?: boolean;
 } | null;
 
-const FREEFORM_EDIT_EXAMPLES = [
-  { label: "Shorten to a word limit", instruction: "Reduce this section to the applicable word limit without removing verified facts, figures, required answers, or budget details." },
-  { label: "Use plainer language", instruction: "Use clear, plain language while preserving the meaning, verified facts, names, dates, figures, and required terminology." },
-  { label: "Clarify partner roles", instruction: "Clarify each partner's responsibilities, deliverables, and accountability using only the roles already provided." },
-  { label: "Strengthen community benefit", instruction: "Strengthen the explanation of community benefit without inventing information or adding unsupported claims." },
-  { label: "Add measurable outcomes", instruction: "Present the provided outcomes and indicators more clearly and measurably using only the details already supplied." },
-  { label: "Convert activities to bullets", instruction: "Format activities, milestones, or deliverables as concise bullet points. Keep narrative explanations as complete sentences and preserve all facts." },
-  { label: "Fix spelling and grammar", instruction: "Correct spelling, grammar, punctuation, and obvious typographical errors only. Do not change meaning, structure, names, Indigenous terminology, dates, figures, or factual claims." },
-];
-
 export function ReportView({
   draft,
   enhanced,
@@ -96,7 +86,6 @@ export function ReportView({
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [issueStatuses, setIssueStatuses] = useState<Record<string, GuidedIssueStatus>>({});
   const [issueInputs, setIssueInputs] = useState<Record<string, string>>({});
-  const [freeformInstructions, setFreeformInstructions] = useState<Record<string, string>>({});
   const [guidedPreview, setGuidedPreview] = useState<GuidedRewritePreview>(null);
   const [showAllGuidedIssues, setShowAllGuidedIssues] = useState(false);
   const [reviewedSections, setReviewedSections] = useState<Record<string, boolean>>({});
@@ -520,39 +509,6 @@ export function ReportView({
     }
   };
 
-  const generateFreeformSuggestion = async (sectionKey: string, sectionTitle: string) => {
-    const state = sectionStates[sectionKey];
-    const request = (freeformInstructions[sectionKey] || "").trim();
-    if (!state || !request) {
-      setSectionError("Describe the change you want before generating a suggestion.");
-      return;
-    }
-    const instruction = [
-      request,
-      "Preserve verified facts, names, dates, figures, and unrelated content.",
-      "Do not invent missing information.",
-    ].join("\n");
-    setSectionError("");
-    setBusyKey(sectionKey);
-    try {
-      const out = await rewriteSection({
-        section_key: sectionKey,
-        section_title: sectionTitle,
-        current_text: state.working,
-        instruction,
-        requirements,
-        profile,
-      });
-      const nextText = stripPromptMetadataLines(out.text || "");
-      if (!nextText) throw new Error("The rewrite did not return section text.");
-      setGuidedPreview({ sectionKey, text: nextText, instruction });
-    } catch (error) {
-      setSectionError(error instanceof Error ? error.message : "Could not generate a rewrite.");
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   const applyGuidedPreview = () => {
     if (!guidedPreview) return;
     const preview = guidedPreview;
@@ -824,7 +780,6 @@ export function ReportView({
           const sectionGaps = sectionResult?.compliance_gaps ?? [];
           const expectedPromptItems =
             sec.prompt_items || requirements.sections.find((item) => item.key === sec.key)?.prompt_items || [];
-          const responseFormatGuidance = getResponseFormatGuidance(expectedPromptItems);
           const hasQuestionResponseView = hasQuestionResponseStructure(state.working, expectedPromptItems);
           const sectionWordLimit = requirements.sections.find((item) => item.key === sec.key)?.word_limit;
           const sectionWordCount = state.working.trim() ? state.working.trim().split(/\s+/).length : 0;
@@ -894,9 +849,11 @@ export function ReportView({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-foreground">Issues to resolve</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Select an issue to see exactly what information or change is needed.</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Select an item to review the required information or revision.</p>
                         </div>
-                        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">{sectionIssues.length} open</span>
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                          {sectionIssues.length} unresolved
+                        </span>
                       </div>
                       <div className="mt-3 space-y-2">
                         {sectionIssues.map((issue) => (
@@ -912,7 +869,7 @@ export function ReportView({
                               <span className="block text-sm font-medium text-foreground">{issue.title}</span>
                               <span className="mt-1 block text-xs text-muted-foreground">{issue.recommendedAction}</span>
                             </span>
-                            <span className="shrink-0 text-xs font-medium text-primary">Review</span>
+                            <span className="shrink-0 text-xs font-medium text-primary">View item</span>
                           </button>
                         ))}
                       </div>
@@ -920,25 +877,13 @@ export function ReportView({
                   )}
                   {activeSectionIssue && (
                     <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Issue to resolve</p>
-                          <p className="mt-2 font-medium text-foreground">{activeSectionIssue.title}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">{activeSectionIssue.explanation}</p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setIssueStatuses((current) => ({ ...current, [activeSectionIssue.id]: "dismissed" }));
-                            setSelectedIssueId(null);
-                          }}
-                        >
-                          Dismiss
-                        </Button>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Required review</p>
+                        <p className="mt-2 font-medium text-foreground">{activeSectionIssue.title}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{activeSectionIssue.explanation}</p>
                       </div>
                       <div className="mt-3 rounded-md border border-border bg-background/60 p-3 text-sm">
-                        <p className="font-medium text-foreground">Recommended action</p>
+                        <p className="font-medium text-foreground">Required action</p>
                         <p className="mt-1 text-muted-foreground">{activeSectionIssue.recommendedAction}</p>
                       </div>
                       {activeSectionIssue.anchorExcerpt && (
@@ -950,7 +895,7 @@ export function ReportView({
                       {activeSectionIssue.requiresUserInformation && (
                         <div className="mt-3 space-y-2">
                           <label className="text-sm font-medium text-foreground" htmlFor={`issue-input-${activeSectionIssue.id}`}>
-                            Information needed from you
+                            Information required
                           </label>
                           <Textarea
                             id={`issue-input-${activeSectionIssue.id}`}
@@ -962,42 +907,48 @@ export function ReportView({
                             spellCheck
                             autoCorrect="on"
                             autoCapitalize="sentences"
-                            placeholder="Add verified facts, names, dates, figures, or evidence. The assistant will not invent missing information."
+                            placeholder="Enter the verified information needed to address this requirement. Include relevant names, dates, figures, or supporting evidence where applicable."
                           />
                         </div>
                       )}
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          {activeSectionIssue.canSuggestRewrite && (
+                            <Button
+                              size="sm"
+                              onClick={() => generateGuidedSuggestion(activeSectionIssue)}
+                              disabled={isBusy}
+                            >
+                              {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                              {isBusy ? "Preparing preview..." : "Generate response preview"}
+                            </Button>
+                          )}
+                        </div>
                         <Button
                           size="sm"
-                          onClick={() => generateGuidedSuggestion(activeSectionIssue)}
-                          disabled={isBusy || !activeSectionIssue.canSuggestRewrite}
+                          variant="outline"
+                          className="border-border bg-background shadow-sm"
+                          onClick={() => {
+                            setIssueStatuses((current) => ({ ...current, [activeSectionIssue.id]: "dismissed" }));
+                            setSelectedIssueId(null);
+                          }}
                         >
-                          {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                          {isBusy ? "Generating..." : "Generate suggested fix"}
+                          Dismiss issue
                         </Button>
-                        {!activeSectionIssue.canSuggestRewrite && (
-                          <p className="self-center text-xs text-muted-foreground">Add the missing content manually before requesting a rewrite.</p>
-                        )}
                       </div>
                     </div>
                   )}
 
                   <div className="space-y-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                        <div>
-                          <p className="font-medium text-foreground">
-                            {hasQuestionResponseView ? "Questions and responses" : "Section response"}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {hasQuestionResponseView
-                              ? "Questions are kept in the text so you can read and edit the full section in one continuous view. Edit the response beneath each question."
-                              : "Question-to-answer mapping was not reliable enough to split this section. The original section text is preserved."}
-                          </p>
-                        </div>
-                        <details className="text-xs text-muted-foreground">
-                          <summary className="cursor-pointer select-none font-medium text-primary">Formatting guidance</summary>
-                          <p className="mt-2 max-w-md rounded-md border border-border bg-muted/30 p-2">{responseFormatGuidance}</p>
-                        </details>
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {hasQuestionResponseView ? "Questions and responses" : "Section response"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {hasQuestionResponseView
+                            ? "Questions are kept in the text so you can read and edit the full section in one continuous view. Edit the response beneath each question."
+                            : "Question-to-answer mapping was not reliable enough to split this section. The original section text is preserved."}
+                        </p>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Version {state.index + 1} of {versionCount}
@@ -1037,59 +988,6 @@ export function ReportView({
                         </Button>
                       </div>
                   </div>
-
-                  <details className="rounded-lg border border-border bg-muted/20">
-                    <summary className="cursor-pointer select-none p-4 text-sm font-medium text-foreground">
-                      More editing options
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">Optional AI rewrite for the entire section</span>
-                    </summary>
-                    <div className="border-t border-border p-4">
-                    <p className="text-xs text-muted-foreground">
-                      This may revise multiple answers. The current section will not change until you review and apply the preview.
-                    </p>
-                    <Textarea
-                      className="mt-3"
-                      value={freeformInstructions[sec.key] || ""}
-                      onChange={(event) =>
-                        setFreeformInstructions((current) => ({ ...current, [sec.key]: event.target.value }))
-                      }
-                      rows={3}
-                      spellCheck
-                      autoCorrect="on"
-                      autoCapitalize="sentences"
-                      placeholder="Example: Reduce this to 300 words without removing facts or budget figures."
-                    />
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {FREEFORM_EDIT_EXAMPLES.map((example) => (
-                        <Button
-                          key={example.label}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            const instruction = example.label === "Shorten to a word limit"
-                              ? sectionWordLimit
-                                ? `Reduce this section to ${sectionWordLimit} words without removing verified facts, figures, required answers, or budget details.`
-                                : "Make this section more concise without removing verified facts, figures, required answers, or budget details."
-                              : example.instruction;
-                            setFreeformInstructions((current) => ({ ...current, [sec.key]: instruction }));
-                          }}
-                        >
-                          {example.label}
-                        </Button>
-                      ))}
-                    </div>
-                    <Button
-                      className="mt-3"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => generateFreeformSuggestion(sec.key, sec.title)}
-                      disabled={isBusy}
-                    >
-                      {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                      {isBusy ? "Generating..." : "Generate rewrite preview"}
-                    </Button>
-                    </div>
-                  </details>
 
                   {activePreview && (
                     <div className="rounded-lg border border-emerald-500/35 bg-emerald-50/70 p-4 dark:bg-emerald-950/10">
@@ -1527,31 +1425,6 @@ const PRIORITY_WARNING_TYPES = new Set([
   "word_limit_exceeded",
   "below_expected_word_limit",
 ]);
-
-function getResponseFormatGuidance(
-  promptItems: NonNullable<Requirements["sections"][number]["prompt_items"]>
-) {
-  const formatText = promptItems
-    .flatMap((item) => [item.response_style, item.answer_type, item.prompt_type, item.detail_text, item.prompt_text])
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const explicitlyRequestsBullets = /\b(bullet|list|table|milestone|activities|deliverables|work ?plan)\b/.test(formatText);
-  const includesNarrative = promptItems.some((item) =>
-    [item.response_style, item.answer_type].some((value) => String(value || "").includes("narrative"))
-  );
-
-  if (explicitlyRequestsBullets && includesNarrative) {
-    return "Use complete sentences for narrative explanations. Use concise bullets for requested activities, milestones, deliverables, or lists. Follow any explicit format in the grant package.";
-  }
-  if (explicitlyRequestsBullets) {
-    return "Use concise bullets for the requested activities, milestones, deliverables, or list items. Add complete sentences only where explanation is needed, and follow the grant package's explicit format.";
-  }
-  if (includesNarrative) {
-    return "Use complete sentences and connected paragraphs. Bullets are appropriate only for a clear list of activities, milestones, deliverables, or roles.";
-  }
-  return "Use complete sentences by default. Use bullets for genuine lists, and always follow any response format explicitly requested in the grant package.";
-}
 
 function buildQuestionResponseText(
   section: DraftSection,

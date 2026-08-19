@@ -39,9 +39,13 @@ export function buildGuidedEditorIssues(params: {
     sectionTitle,
     category: "missing_information",
     severity: prompt.status === "missing" ? "high" : "medium",
-    title: prompt.status === "missing" ? `Answer ${prompt.promptId}` : `Confirm ${prompt.promptId}`,
-    explanation: prompt.reviewNote || prompt.promptText,
-    recommendedAction: `Provide verified information for: ${prompt.promptText}`,
+    title: prompt.status === "missing"
+      ? `Question ${prompt.promptId}: response required`
+      : `Question ${prompt.promptId}: confirmation required`,
+    explanation: prompt.status === "missing"
+      ? "A reliable response could not be prepared from the information provided."
+      : prompt.reviewNote || "The current response requires confirmation before submission.",
+    recommendedAction: `Provide verified information addressing the following requirement: ${prompt.promptText}`,
     anchorType: "section",
     requiresUserInformation: true,
     canSuggestRewrite: true,
@@ -69,6 +73,10 @@ export function buildGuidedEditorIssues(params: {
   const warningIssues = warnings.map<GuidedEditorIssue>((warning, index) => {
     const isEmpty = warning.type === "empty_section" || warning.type === "whitespace_only_section";
     const isWordLimit = warning.type.includes("word_limit");
+    const isReviewOnly =
+      warning.type.includes("sensitive") ||
+      warning.type.includes("restricted_data_governance") ||
+      warning.type.includes("external_llm_blocked");
     return {
       id: `${sectionKey}:warning:${warning.type}:${index}`,
       sectionKey,
@@ -80,7 +88,7 @@ export function buildGuidedEditorIssues(params: {
       recommendedAction: warningAction(warning.type),
       anchorType: "section",
       requiresUserInformation: isEmpty,
-      canSuggestRewrite: !isEmpty || sectionBody.trim().length > 0,
+      canSuggestRewrite: !isReviewOnly && (!isEmpty || sectionBody.trim().length > 0),
     };
   });
 
