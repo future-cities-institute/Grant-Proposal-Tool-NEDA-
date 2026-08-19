@@ -150,6 +150,10 @@ export type CommunityProfile = {
   scaling_plan?: string;
   supporting_documents_text?: string;
   requested_budget?: number;
+  budget_line_items?: Array<{ category?: string; description?: string; amount: number }>;
+  budget_contingency_rate?: number;
+  budget_admin_rate?: number;
+  budget_participant_count?: number;
   indicators_before?: Record<string, number>;
   indicators_after?: Record<string, number>;
   scenario?: Record<string, unknown>;

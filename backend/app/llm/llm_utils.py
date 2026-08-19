@@ -158,6 +158,9 @@ def _build_payload(
     )
     raw_req_text = (requirements.get("raw_text") or "")[:6000]
 
+    from backend.app.utils.budget_calculations import calculate_budget_outputs
+    verified_budget_calculations = calculate_budget_outputs(profile)
+
     payload = {
         "grant_name": grant_name,
         "community_profile": {
@@ -245,6 +248,7 @@ def _build_payload(
             "requested_budget": profile.get("requested_budget", None),
         },
         "requirements_text_snippet": raw_req_text,
+        "verified_budget_calculations": verified_budget_calculations,
         "sections_to_improve": [
             {
                 "key": s.get("key"),
@@ -295,6 +299,10 @@ def _build_payload(
             Ground all writing strictly in the provided information.
             Do NOT invent facts, partners, legal status, timelines, funding amounts,
             or commitments that were not explicitly provided.
+            For budget-related outputs, use verified_budget_calculations when a relevant
+            result is available. Treat those results as read-only: do not recalculate,
+            alter, or approximate them. Do not derive numbers from narrative budget text.
+            If the required structured inputs or verified result are absent, do not estimate.
             Do NOT invent population counts, beneficiary counts, baseline numbers, total project
             cost, CRA/business numbers, contact details, Elders involvement, Knowledge Keepers
             involvement, Youth involvement, OCAP/data governance, letters of support, approvals,
@@ -895,7 +903,13 @@ def _is_generic_answer_for_specific_prompt(prompt_item: Dict[str, Any], answer: 
 
 
 def _profile_number_tokens(profile: Dict[str, Any]) -> set[str]:
-    profile_text = json.dumps(profile or {}, ensure_ascii=False)
+    from backend.app.utils.budget_calculations import calculate_budget_outputs
+    verified_values = [
+        calculation.get("value")
+        for calculation in calculate_budget_outputs(profile or {})
+        if calculation.get("value") is not None
+    ]
+    profile_text = json.dumps({"profile": profile or {}, "verified_values": verified_values}, ensure_ascii=False)
     return {token.replace(",", "").replace("%", "") for token in re.findall(r"\b\d[\d,]*(?:\.\d+)?%?\b", profile_text)}
 
 

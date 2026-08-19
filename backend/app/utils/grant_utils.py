@@ -47,6 +47,7 @@ def generate_proposal_from_requirements(profile: Dict[str, Any], requirements: D
             "local_priority": profile.get("local_priority"),
             "requested_budget": requested_budget,
             "grant_name": requirements.get("grant_name", ""),
+            "verified_budget_calculations": profile.get("verified_budget_calculations", []),
         },
         "sections": sections_out
     }

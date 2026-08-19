@@ -140,7 +140,7 @@ class CommunityProfile(BaseModel):
     cultural_safety: str = ""
     evidence_note: str = ""
     why_now: str = ""
-    total_project_cost: Optional[int] = None
+    total_project_cost: Optional[float] = None
     budget_personnel: str = ""
     budget_professional_services: str = ""
     budget_equipment_materials: str = ""
@@ -162,7 +162,11 @@ class CommunityProfile(BaseModel):
     future_funding_sources: str = ""
     scaling_plan: str = ""
     supporting_documents_text: str = ""
-    requested_budget: Optional[int] = None
+    requested_budget: Optional[float] = None
+    budget_line_items: List[Dict[str, Any]] = Field(default_factory=list)
+    budget_contingency_rate: Optional[float] = None
+    budget_admin_rate: Optional[float] = None
+    budget_participant_count: Optional[float] = None
     indicators_before: Optional[Dict[str, Any]] = None
     indicators_after: Optional[Dict[str, Any]] = None
     scenario: Optional[Dict[str, Any]] = None
@@ -191,7 +195,7 @@ class RequirementsBody(BaseModel):
 class GenerateDraftRequest(BaseModel):
     profile: CommunityProfile
     requirements: Dict[str, Any]  # full requirements as returned by parse
-    requested_budget: int = Field(..., ge=0)
+    requested_budget: float = Field(..., ge=0)
 
 
 class EnhanceRequest(BaseModel):
@@ -788,6 +792,9 @@ def generate_draft(body: GenerateDraftRequest):
     profile = body.profile.model_dump()
     requirements = body.requirements
     budget = body.requested_budget
+    profile["requested_budget"] = budget
+    from backend.app.utils.budget_calculations import calculate_budget_outputs
+    profile["verified_budget_calculations"] = calculate_budget_outputs(profile)
     draft = generate_proposal_from_requirements(profile=profile, requirements=requirements, requested_budget=budget)
     return draft
 
