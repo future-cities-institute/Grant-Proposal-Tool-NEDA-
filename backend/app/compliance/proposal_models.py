@@ -92,6 +92,9 @@ class ProposalAnalysisResponse(BaseModel):
     assistant_starters: List[str] = Field(default_factory=list)
     raw_preview_text: str = ""
     report_summary: str
+    rubric_version: str = "proposal-readiness-v1"
+    score_label: str = ""
+    rubric: Dict = Field(default_factory=dict)
 
 
 class ProposalSectionRewriteRequest(BaseModel):

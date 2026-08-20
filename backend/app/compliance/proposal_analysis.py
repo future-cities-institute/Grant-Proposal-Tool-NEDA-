@@ -25,37 +25,18 @@ from backend.app.compliance.proposal_models import (
 )
 from backend.app.compliance.registry import detect_inuit_specific, normalize_section_name
 from backend.app.compliance.service import ComplianceEvaluationService
+from backend.app.compliance.proposal_rubric import (
+    CATEGORY_BY_ID,
+    CATEGORY_SPECS,
+    METRIC_BY_ID,
+    METRIC_SPECS,
+    RUBRIC_VERSION,
+    rubric_metadata,
+    score_label,
+)
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
-
-
-CATEGORY_LABELS = {
-    "content": "Content",
-    "sections": "Sections",
-    "funding_fit": "Funding Fit",
-    "indigenous_governance_ethics": "Indigenous Governance & Ethics",
-}
-
-
-METRIC_SPECS = [
-    ("community_need_problem_framing", "Community Need / Problem Framing", "content"),
-    ("clarity_specificity", "Clarity & Specificity", "content"),
-    ("quantifiable_impact", "Quantifiable Impact / Measurable Outcomes", "content"),
-    ("repetition_redundancy", "Repetition / Redundancy", "content"),
-    ("grammar_writing_quality", "Grammar / Writing Quality", "content"),
-    ("section_completeness", "Section Completeness", "sections"),
-    ("missing_required_components", "Missing Required Components", "sections"),
-    ("structural_readiness", "Structural Readiness", "sections"),
-    ("program_alignment", "Program Alignment", "funding_fit"),
-    ("eligibility_requirements_fit", "Eligibility / Requirements Fit", "funding_fit"),
-    ("budget_alignment", "Budget Alignment", "funding_fit"),
-    ("deliverables_activities_fit", "Deliverables / Activities Fit", "funding_fit"),
-    ("community_engagement", "Community Engagement", "indigenous_governance_ethics"),
-    ("ocap_data_governance", "OCAP / Data Governance", "indigenous_governance_ethics"),
-    ("tcps2_ethical_research", "TCPS2 / Ethical Research Alignment", "indigenous_governance_ethics"),
-    ("inuit_specific_alignment", "Inuit-specific Alignment / IQ Principles", "indigenous_governance_ethics"),
-]
 
 
 def _proposal_analysis_path(proposal_id: str) -> Path:
@@ -278,6 +259,9 @@ class ProposalAnalysisService:
             ],
             raw_preview_text=raw_preview_text,
             report_summary=_build_report_summary(evaluated_sections, categories),
+            rubric_version=RUBRIC_VERSION,
+            score_label=score_label(overall_score),
+            rubric=rubric_metadata(),
         )
 
 
@@ -286,28 +270,28 @@ def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCate
     issue_buckets: Dict[str, List[MetricIssue]] = defaultdict(list)
     metric_scores: Dict[str, int] = {}
 
-    for metric_id, label, category_id in METRIC_SPECS:
-        metric_issues = _build_metric_issues(metric_id, label, sections, section_map)
-        issue_buckets[metric_id] = metric_issues
-        metric_scores[metric_id] = _score_metric(metric_issues)
+    for metric in METRIC_SPECS:
+        metric_issues = _build_metric_issues(metric.id, metric.label, sections, section_map)
+        issue_buckets[metric.id] = metric_issues
+        metric_scores[metric.id] = _score_metric(metric_issues)
 
     categories: List[MetricCategoryResult] = []
-    for category_id, label in CATEGORY_LABELS.items():
+    for category in CATEGORY_SPECS:
         metrics: List[MetricResult] = []
-        for metric_id, metric_label, metric_category in METRIC_SPECS:
-            if metric_category != category_id:
+        for metric in METRIC_SPECS:
+            if metric.category_id != category.id:
                 continue
-            metric_issues = issue_buckets[metric_id]
+            metric_issues = issue_buckets[metric.id]
             metrics.append(
                 MetricResult(
-                    id=metric_id,
-                    label=metric_label,
-                    category_id=category_id,
-                    description=_metric_description(metric_id, metric_label),
-                    score=metric_scores[metric_id],
+                    id=metric.id,
+                    label=metric.label,
+                    category_id=category.id,
+                    description=metric.description,
+                    score=metric_scores[metric.id],
                     issues_count=len(metric_issues),
                     status="No issues" if not metric_issues else f"{len(metric_issues)} issues found",
-                    summary=_metric_summary(metric_id, metric_issues),
+                    summary=_metric_summary(metric.id, metric_issues),
                     issues=metric_issues,
                     suggestions=[issue.recommendation for issue in metric_issues[:3]] or [f"Maintain strong {metric_label.lower()}."],
                     linked_sections=sorted({section for issue in metric_issues for section in issue.affected_sections}),
@@ -316,8 +300,8 @@ def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCate
 
         categories.append(
             MetricCategoryResult(
-                id=category_id,
-                label=label,
+                id=category.id,
+                label=category.label,
                 score=_score_category(metrics),
                 issues=sum(metric.issues_count for metric in metrics),
                 metrics=metrics,
@@ -357,19 +341,7 @@ def _score_category(metrics: List[MetricResult]) -> int:
     weighted_total = 0.0
     total_weight = 0.0
     for metric in metrics:
-        weight = 1.0
-        if metric.id in {
-            "program_alignment",
-            "budget_alignment",
-            "quantifiable_impact",
-            "section_completeness",
-            "community_engagement",
-            "ocap_data_governance",
-            "inuit_specific_alignment",
-        }:
-            weight = 1.25
-        elif metric.id in {"clarity_specificity", "structural_readiness", "tcps2_ethical_research"}:
-            weight = 1.1
+        weight = METRIC_BY_ID.get(metric.id).weight if metric.id in METRIC_BY_ID else 1.0
         weighted_total += metric.score * weight
         total_weight += weight
 
@@ -382,17 +354,11 @@ def _score_overall(categories: List[MetricCategoryResult]) -> int:
     if not categories:
         return 0
 
-    category_weights = {
-        "content": 0.26,
-        "sections": 0.18,
-        "funding_fit": 0.28,
-        "indigenous_governance_ethics": 0.28,
-    }
     weighted_total = 0.0
     total_weight = 0.0
     total_issues = 0
     for category in categories:
-        weight = category_weights.get(category.id, 0.25)
+        weight = CATEGORY_BY_ID.get(category.id).weight if category.id in CATEGORY_BY_ID else 0.0
         weighted_total += category.score * weight
         total_weight += weight
         total_issues += category.issues
@@ -516,28 +482,6 @@ def _generic_issue(
         excerpt=text_anchor or paragraph_anchor or None,
         recommendation=f"Revise '{section.title}' to strengthen {label.lower()}.",
     )
-
-
-def _metric_description(metric_id: str, label: str) -> str:
-    descriptions = {
-        "community_need_problem_framing": "Checks whether the proposal explains the problem, need, and local context persuasively.",
-        "clarity_specificity": "Looks for specific, concrete wording instead of broad or generic statements.",
-        "quantifiable_impact": "Assesses whether the draft includes measurable targets, outcomes, or quantified impact.",
-        "repetition_redundancy": "Flags repeated ideas or overly recycled phrasing across sections.",
-        "grammar_writing_quality": "Highlights sentence-level quality issues that affect readability and polish.",
-        "section_completeness": "Evaluates whether sections are present and materially complete.",
-        "missing_required_components": "Flags places where expected components appear to be missing or underdeveloped.",
-        "structural_readiness": "Assesses whether the proposal feels submission-ready at a structural level.",
-        "program_alignment": "Measures how clearly the draft connects the project to funder goals and expectations.",
-        "eligibility_requirements_fit": "Looks for explicit evidence that the proposal fits the program rules and priorities.",
-        "budget_alignment": "Checks whether costs are clearly tied to eligible project activities.",
-        "deliverables_activities_fit": "Evaluates whether deliverables, activities, and implementation details are concrete.",
-        "community_engagement": "Assesses whether community partners have meaningful roles in the work.",
-        "ocap_data_governance": "Checks how the draft handles ownership, access, control, and data governance expectations.",
-        "tcps2_ethical_research": "Assesses ethical research framing and respectful partnership language.",
-        "inuit_specific_alignment": "Applies Inuit-specific governance and IQ expectations when the proposal is Inuit-focused.",
-    }
-    return descriptions.get(metric_id, f"Evaluates {label.lower()}.")
 
 
 def _metric_summary(metric_id: str, issues: List[MetricIssue]) -> str:

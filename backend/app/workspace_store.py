@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Generator
 from uuid import uuid4
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = ROOT / "data" / "proposal_workspace.sqlite3"
 

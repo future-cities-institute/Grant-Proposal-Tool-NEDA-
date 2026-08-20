@@ -352,6 +352,25 @@ export type ProposalAnalysis = {
   assistant_starters: string[];
   raw_preview_text: string;
   report_summary: string;
+  rubric_version: string;
+  score_label: string;
+  rubric: {
+    version: string;
+    score_bands: Array<{ minimum: number; label: string }>;
+    categories: Array<{
+      id: string;
+      label: string;
+      weight: number;
+      description: string;
+      metrics: Array<{
+        id: string;
+        label: string;
+        weight: number;
+        description: string;
+        evidence_expectations: string[];
+      }>;
+    }>;
+  };
 };
 
 export type ProposalRewriteResponse = {

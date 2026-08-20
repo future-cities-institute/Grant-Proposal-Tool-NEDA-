@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.app.compliance import build_default_service, ComplianceEvaluationService
 from backend.app.compliance.proposal_analysis import ProposalAnalysisService
+from backend.app.compliance.proposal_rubric import RUBRIC_VERSION
 from backend.app.compliance.models import (
     ComplianceEvaluationRequest,
     ComplianceEvaluationResponse,
@@ -294,9 +295,6 @@ class CommunityProfileRecord(CommunityProfileRequest):
     user_id: str
     created_at: str
     updated_at: str
-
-
-PROPOSAL_REVIEW_RUBRIC_VERSION = "proposal-readiness-v1"
 
 
 class FeedbackReportRequest(BaseModel):
@@ -655,7 +653,7 @@ def create_saved_feedback_report(body: FeedbackReportRequest, user: Dict[str, An
     payload = body.model_dump(exclude_unset=True)
     if parent_report and not payload.get("source_proposal_id"):
         payload["source_proposal_id"] = parent_report.get("source_proposal_id")
-    payload.update({"status": "complete", "rubric_version": PROPOSAL_REVIEW_RUBRIC_VERSION})
+    payload.update({"status": "complete", "rubric_version": RUBRIC_VERSION})
     return store_create_feedback_report(user["id"], payload)
 
 
