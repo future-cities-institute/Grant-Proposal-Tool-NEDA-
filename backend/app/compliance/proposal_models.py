@@ -59,6 +59,8 @@ class MetricCategoryResult(BaseModel):
     score: int = Field(ge=0, le=100)
     issues: int = 0
     metrics: List[MetricResult] = Field(default_factory=list)
+    assessed: bool = True
+    not_assessed_reason: Optional[str] = None
 
 
 class AnalysisHeader(BaseModel):

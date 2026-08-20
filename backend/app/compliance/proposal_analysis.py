@@ -47,7 +47,14 @@ class ProposalAnalysisService:
     def __init__(self, compliance_service: ComplianceEvaluationService) -> None:
         self.compliance_service = compliance_service
 
-    def analyze_upload(self, file_name: str, file_bytes: bytes, *, persist_to_legacy_cache: bool = True) -> ProposalAnalysisResponse:
+    def analyze_upload(
+        self,
+        file_name: str,
+        file_bytes: bytes,
+        *,
+        persist_to_legacy_cache: bool = True,
+        grant_context_available: bool = False,
+    ) -> ProposalAnalysisResponse:
         if len(file_bytes) > MAX_UPLOAD_BYTES:
             raise ValueError("File exceeds the 15 MB upload limit.")
 
@@ -94,6 +101,7 @@ class ProposalAnalysisService:
             additional_submission_requirements=_extract_additional_submission_requirements(cleaned_text),
             extraction_diagnostics=extraction_diagnostics,
             raw_preview_text=cleaned_text or raw_text,
+            grant_context_available=grant_context_available,
         )
         if persist_to_legacy_cache:
             self.save_analysis(analysis)
@@ -105,6 +113,7 @@ class ProposalAnalysisService:
         file_name: str,
         sections: List[ProposalSection],
         raw_preview_text: str = "",
+        grant_context_available: bool = False,
     ) -> ProposalAnalysisResponse:
         """Analyze finalized workspace sections without writing to the legacy file cache."""
         ordered_sections = sorted(sections, key=lambda item: item.order)
@@ -113,6 +122,7 @@ class ProposalAnalysisService:
             file_type="workspace",
             sections=ordered_sections,
             raw_preview_text=raw_preview_text or "\n\n".join(section.body for section in ordered_sections),
+            grant_context_available=grant_context_available,
         )
 
     def save_analysis(self, analysis: ProposalAnalysisResponse) -> None:
@@ -140,6 +150,7 @@ class ProposalAnalysisService:
             raw_preview_text=existing.raw_preview_text,
             proposal_id=proposal_id,
             uploaded_at=existing.analysis.uploaded_at,
+            grant_context_available=any(category.id == "funding_alignment" and category.assessed for category in existing.categories),
         )
         self.save_analysis(analysis)
         return analysis
@@ -222,6 +233,7 @@ class ProposalAnalysisService:
         raw_preview_text: str = "",
         proposal_id: str | None = None,
         uploaded_at: datetime | None = None,
+        grant_context_available: bool = False,
     ) -> ProposalAnalysisResponse:
         evaluated_sections: List[ProposalSection] = []
         for section in sections:
@@ -242,7 +254,7 @@ class ProposalAnalysisService:
                 )
             )
 
-        categories = _build_metric_categories(evaluated_sections)
+        categories = _build_metric_categories(evaluated_sections, grant_context_available=grant_context_available)
         overall_score = _score_overall(categories)
         issue_count = sum(category.issues for category in categories)
         now = datetime.now(timezone.utc)
@@ -282,7 +294,11 @@ class ProposalAnalysisService:
         )
 
 
-def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCategoryResult]:
+def _build_metric_categories(
+    sections: List[ProposalSection],
+    *,
+    grant_context_available: bool = False,
+) -> List[MetricCategoryResult]:
     section_map = {section.key: section for section in sections}
     issue_buckets: Dict[str, List[MetricIssue]] = defaultdict(list)
     metric_scores: Dict[str, int] = {}
@@ -319,9 +335,15 @@ def _build_metric_categories(sections: List[ProposalSection]) -> List[MetricCate
             MetricCategoryResult(
                 id=category.id,
                 label=category.label,
-                score=_score_category(metrics),
-                issues=sum(metric.issues_count for metric in metrics),
+                score=_score_category(metrics) if category.id != "funding_alignment" or grant_context_available else 0,
+                issues=sum(metric.issues_count for metric in metrics) if category.id != "funding_alignment" or grant_context_available else 0,
                 metrics=metrics,
+                assessed=category.id != "funding_alignment" or grant_context_available,
+                not_assessed_reason=(
+                    None
+                    if category.id != "funding_alignment" or grant_context_available
+                    else "Grant guidelines were not provided, so program-specific alignment was not assessed."
+                ),
             )
         )
     return categories
@@ -375,6 +397,8 @@ def _score_overall(categories: List[MetricCategoryResult]) -> int:
     total_weight = 0.0
     total_issues = 0
     for category in categories:
+        if not category.assessed:
+            continue
         weight = CATEGORY_BY_ID.get(category.id).weight if category.id in CATEGORY_BY_ID else 0.0
         weighted_total += category.score * weight
         total_weight += weight
@@ -510,7 +534,8 @@ def _metric_summary(metric_id: str, issues: List[MetricIssue]) -> str:
 
 
 def _build_report_summary(sections: List[ProposalSection], categories: List[MetricCategoryResult]) -> str:
-    weakest = sorted(categories, key=lambda item: item.score)[:2]
+    assessed_categories = [category for category in categories if category.assessed]
+    weakest = sorted(assessed_categories, key=lambda item: item.score)[:2]
     issue_count = sum(category.issues for category in categories)
     section_count = len(sections)
     weak_labels = ", ".join(category.label for category in weakest)

@@ -682,19 +682,27 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                       {category.label}
                     </p>
-                    <p className="text-3xl font-semibold leading-none text-foreground">{category.score}%</p>
+                    <p className="text-3xl font-semibold leading-none text-foreground">
+                      {category.assessed === false ? "Not assessed" : `${category.score}%`}
+                    </p>
                     <div className="space-y-1 text-sm">
                       <p
                         className={
                           category.issues > 0 ? "font-medium text-rose-300" : "font-medium text-emerald-300"
                         }
                       >
-                        {category.issues} issues
+                        {category.assessed === false ? "Guidelines required" : `${category.issues} issues`}
                       </p>
                       <p className="text-muted-foreground">{category.metrics.length} metrics</p>
                     </div>
                   </div>
-                  <CategoryScoreGraph score={category.score} categoryId={category.id} />
+                  {category.assessed === false ? (
+                    <p className="max-w-28 text-right text-xs leading-relaxed text-muted-foreground">
+                      {category.not_assessed_reason}
+                    </p>
+                  ) : (
+                    <CategoryScoreGraph score={category.score} categoryId={category.id} />
+                  )}
                 </CardContent>
               </Card>
             ))}

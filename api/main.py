@@ -750,6 +750,7 @@ async def analyze_uploaded_proposal_for_feedback(
             proposal_name,
             proposal_content,
             persist_to_legacy_cache=False,
+            grant_context_available=grant_context is not None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -784,6 +785,7 @@ def analyze_saved_proposal_for_feedback(proposal_id: str, user: Dict[str, Any] =
     analysis = get_proposal_analysis_service().analyze_sections_snapshot(
         file_name=title,
         sections=sections,
+        grant_context_available=bool(proposal.get("requirements")),
     )
     requirements = proposal.get("requirements") or {}
     grant_context = {

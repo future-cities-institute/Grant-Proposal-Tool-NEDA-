@@ -307,6 +307,8 @@ export type ProposalMetricCategory = {
   score: number;
   issues: number;
   metrics: ProposalMetric[];
+  assessed?: boolean;
+  not_assessed_reason?: string | null;
 };
 
 export type ProposalAnalysisSection = {
