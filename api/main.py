@@ -47,14 +47,18 @@ from backend.app.compliance.proposal_models import (
 )
 from backend.app.auth import user_from_authorization_header
 from backend.app.workspace_store import (
+    create_feedback_report as store_create_feedback_report,
     create_proposal as store_create_proposal,
+    delete_feedback_report as store_delete_feedback_report,
     delete_proposal as store_delete_proposal,
     duplicate_proposal as store_duplicate_proposal,
     get_or_create_user,
     get_community_profile as store_get_community_profile,
+    get_feedback_report as store_get_feedback_report,
     get_proposal as store_get_proposal,
     init_workspace_store,
     list_proposals as store_list_proposals,
+    list_feedback_reports as store_list_feedback_reports,
     mark_proposal_exported,
     update_proposal as store_update_proposal,
     upsert_community_profile as store_upsert_community_profile,
@@ -290,6 +294,35 @@ class CommunityProfileRecord(CommunityProfileRequest):
     user_id: str
     created_at: str
     updated_at: str
+
+
+PROPOSAL_REVIEW_RUBRIC_VERSION = "proposal-readiness-v1"
+
+
+class FeedbackReportRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    source_filename: str = Field(default="", max_length=255)
+    source_proposal_id: Optional[str] = None
+    parent_report_id: Optional[str] = None
+    overall_score: Optional[float] = Field(default=None, ge=0, le=100)
+    priority_issue_count: int = Field(default=0, ge=0)
+    category_scores: Dict[str, float] = Field(default_factory=dict)
+    report: Dict[str, Any] = Field(default_factory=dict)
+    extracted_sections: List[Dict[str, Any]] = Field(default_factory=list)
+    grant_context: Optional[Dict[str, Any]] = None
+
+
+class FeedbackReportRecord(FeedbackReportRequest):
+    id: str
+    user_id: str
+    status: str
+    rubric_version: str
+    created_at: str
+    analyzed_at: str
+
+
+class FeedbackReportListResponse(BaseModel):
+    reports: List[FeedbackReportRecord]
 
 
 def current_user(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
@@ -597,6 +630,48 @@ def delete_saved_proposal(proposal_id: str, user: Dict[str, Any] = Depends(curre
     deleted = store_delete_proposal(user["id"], proposal_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Proposal not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/proposal-feedback-reports", response_model=FeedbackReportListResponse)
+def list_saved_feedback_reports(user: Dict[str, Any] = Depends(current_user)):
+    return {"reports": store_list_feedback_reports(user["id"])}
+
+
+@app.post("/api/proposal-feedback-reports", response_model=FeedbackReportRecord)
+def create_saved_feedback_report(body: FeedbackReportRequest, user: Dict[str, Any] = Depends(current_user)):
+    if body.source_proposal_id and not store_get_proposal(user["id"], body.source_proposal_id):
+        raise HTTPException(status_code=404, detail="Source proposal not found.")
+    if any(score < 0 or score > 100 for score in body.category_scores.values()):
+        raise HTTPException(status_code=422, detail="Category scores must be between 0 and 100.")
+    parent_report = None
+    if body.parent_report_id:
+        parent_report = store_get_feedback_report(user["id"], body.parent_report_id)
+        if not parent_report:
+            raise HTTPException(status_code=404, detail="Parent feedback report not found.")
+        parent_source_id = parent_report.get("source_proposal_id")
+        if body.source_proposal_id and parent_source_id and body.source_proposal_id != parent_source_id:
+            raise HTTPException(status_code=422, detail="Parent report belongs to a different proposal.")
+    payload = body.model_dump(exclude_unset=True)
+    if parent_report and not payload.get("source_proposal_id"):
+        payload["source_proposal_id"] = parent_report.get("source_proposal_id")
+    payload.update({"status": "complete", "rubric_version": PROPOSAL_REVIEW_RUBRIC_VERSION})
+    return store_create_feedback_report(user["id"], payload)
+
+
+@app.get("/api/proposal-feedback-reports/{report_id}", response_model=FeedbackReportRecord)
+def get_saved_feedback_report(report_id: str, user: Dict[str, Any] = Depends(current_user)):
+    report = store_get_feedback_report(user["id"], report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Feedback report not found.")
+    return report
+
+
+@app.delete("/api/proposal-feedback-reports/{report_id}")
+def delete_saved_feedback_report(report_id: str, user: Dict[str, Any] = Depends(current_user)):
+    deleted = store_delete_feedback_report(user["id"], report_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Feedback report not found.")
     return {"deleted": True}
 
 

@@ -146,6 +146,40 @@ def init_workspace_store() -> None:
             conn,
             "CREATE INDEX IF NOT EXISTS idx_proposals_user_updated ON proposals(user_id, updated_at DESC)",
         )
+        _run(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS proposal_feedback_reports (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                source_proposal_id TEXT,
+                parent_report_id TEXT,
+                title TEXT NOT NULL,
+                source_filename TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'complete',
+                rubric_version TEXT NOT NULL,
+                overall_score REAL,
+                priority_issue_count INTEGER NOT NULL DEFAULT 0,
+                category_scores_json TEXT NOT NULL,
+                report_json TEXT NOT NULL,
+                extracted_sections_json TEXT NOT NULL,
+                grant_context_json TEXT,
+                created_at TEXT NOT NULL,
+                analyzed_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (source_proposal_id) REFERENCES proposals(id),
+                FOREIGN KEY (parent_report_id) REFERENCES proposal_feedback_reports(id)
+            )
+            """,
+        )
+        _run(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_feedback_reports_user_analyzed ON proposal_feedback_reports(user_id, analyzed_at DESC)",
+        )
+        _run(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_feedback_reports_source ON proposal_feedback_reports(user_id, source_proposal_id, analyzed_at DESC)",
+        )
 
 
 def _ensure_column(conn: Any, table: str, column: str, definition: str) -> None:
@@ -395,6 +429,84 @@ def mark_proposal_exported(user_id: str, proposal_id: str) -> dict[str, Any] | N
     )
 
 
+def create_feedback_report(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Create an immutable, user-scoped proposal review snapshot."""
+    init_workspace_store()
+    now = _now()
+    report_id = payload.get("id") or uuid4().hex[:12]
+    analyzed_at = payload.get("analyzed_at") or now
+    with _connect() as conn:
+        _run(
+            conn,
+            """
+            INSERT INTO proposal_feedback_reports (
+                id, user_id, source_proposal_id, parent_report_id, title, source_filename,
+                status, rubric_version, overall_score, priority_issue_count,
+                category_scores_json, report_json, extracted_sections_json, grant_context_json,
+                created_at, analyzed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_id,
+                user_id,
+                payload.get("source_proposal_id"),
+                payload.get("parent_report_id"),
+                payload.get("title") or "Untitled Proposal Review",
+                payload.get("source_filename") or "",
+                payload.get("status") or "complete",
+                payload.get("rubric_version") or "proposal-readiness-v1",
+                payload.get("overall_score"),
+                int(payload.get("priority_issue_count") or 0),
+                _json_dump(payload.get("category_scores") or {}),
+                _json_dump(payload.get("report") or {}),
+                _json_dump(payload.get("extracted_sections") or []),
+                _json_dump(payload.get("grant_context")),
+                now,
+                analyzed_at,
+            ),
+        )
+        row = _run(
+            conn,
+            "SELECT * FROM proposal_feedback_reports WHERE id = ? AND user_id = ?",
+            (report_id, user_id),
+        ).fetchone()
+    return _row_to_feedback_report(row, include_payload=True)
+
+
+def list_feedback_reports(user_id: str) -> list[dict[str, Any]]:
+    init_workspace_store()
+    with _connect() as conn:
+        rows = _run(
+            conn,
+            "SELECT * FROM proposal_feedback_reports WHERE user_id = ? ORDER BY analyzed_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [_row_to_feedback_report(row, include_payload=False) for row in rows]
+
+
+def get_feedback_report(user_id: str, report_id: str) -> dict[str, Any] | None:
+    init_workspace_store()
+    with _connect() as conn:
+        row = _run(
+            conn,
+            "SELECT * FROM proposal_feedback_reports WHERE id = ? AND user_id = ?",
+            (report_id, user_id),
+        ).fetchone()
+    return _row_to_feedback_report(row, include_payload=True) if row else None
+
+
+def delete_feedback_report(user_id: str, report_id: str) -> bool:
+    init_workspace_store()
+    with _connect() as conn:
+        cur = _run(
+            conn,
+            "DELETE FROM proposal_feedback_reports WHERE id = ? AND user_id = ?",
+            (report_id, user_id),
+        )
+    return cur.rowcount > 0
+
+
 def _row_to_user(row: Any) -> dict[str, Any]:
     if row is None:
         return {}
@@ -447,3 +559,30 @@ def _row_to_proposal(row: Any, *, include_payload: bool) -> dict[str, Any]:
             }
         )
     return proposal
+
+
+def _row_to_feedback_report(row: Any, *, include_payload: bool) -> dict[str, Any]:
+    report = {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "source_proposal_id": row["source_proposal_id"],
+        "parent_report_id": row["parent_report_id"],
+        "title": row["title"],
+        "source_filename": row["source_filename"],
+        "status": row["status"],
+        "rubric_version": row["rubric_version"],
+        "overall_score": row["overall_score"],
+        "priority_issue_count": row["priority_issue_count"],
+        "category_scores": _json_load(row["category_scores_json"]) or {},
+        "created_at": row["created_at"],
+        "analyzed_at": row["analyzed_at"],
+    }
+    if include_payload:
+        report.update(
+            {
+                "report": _json_load(row["report_json"]) or {},
+                "extracted_sections": _json_load(row["extracted_sections_json"]) or [],
+                "grant_context": _json_load(row["grant_context_json"]),
+            }
+        )
+    return report

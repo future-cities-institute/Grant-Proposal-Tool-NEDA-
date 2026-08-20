@@ -410,6 +410,41 @@ export type CommunityProfileRecord = {
   updated_at: string;
 };
 
+export type ProposalFeedbackReport = {
+  id: string;
+  user_id: string;
+  source_proposal_id?: string | null;
+  parent_report_id?: string | null;
+  title: string;
+  source_filename: string;
+  status: string;
+  rubric_version: string;
+  overall_score?: number | null;
+  priority_issue_count: number;
+  category_scores: Record<string, number>;
+  report?: Record<string, unknown>;
+  extracted_sections?: Array<Record<string, unknown>>;
+  grant_context?: Record<string, unknown> | null;
+  created_at: string;
+  analyzed_at: string;
+};
+
+export type ProposalFeedbackReportInput = Pick<ProposalFeedbackReport, "title"> &
+  Partial<
+    Pick<
+      ProposalFeedbackReport,
+      | "source_filename"
+      | "source_proposal_id"
+      | "parent_report_id"
+      | "overall_score"
+      | "priority_issue_count"
+      | "category_scores"
+      | "report"
+      | "extracted_sections"
+      | "grant_context"
+    >
+  >;
+
 export type SavedProposalInput = Partial<
   Pick<
     SavedProposal,
@@ -538,6 +573,42 @@ export async function duplicateSavedProposal(proposalId: string): Promise<SavedP
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Failed to duplicate proposal");
+  }
+  return res.json();
+}
+
+export async function listProposalFeedbackReports(): Promise<ProposalFeedbackReport[]> {
+  const res = await fetch(`${API_BASE}/api/proposal-feedback-reports`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load proposal feedback reports");
+  }
+  const payload = await res.json();
+  return payload.reports || [];
+}
+
+export async function createProposalFeedbackReport(params: ProposalFeedbackReportInput): Promise<ProposalFeedbackReport> {
+  const res = await fetch(`${API_BASE}/api/proposal-feedback-reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to save proposal feedback report");
+  }
+  return res.json();
+}
+
+export async function getProposalFeedbackReport(reportId: string): Promise<ProposalFeedbackReport> {
+  const res = await fetch(`${API_BASE}/api/proposal-feedback-reports/${reportId}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load proposal feedback report");
   }
   return res.json();
 }
