@@ -326,7 +326,7 @@ def _build_metric_categories(
                     status="No issues" if not metric_issues else f"{len(metric_issues)} issues found",
                     summary=_metric_summary(metric.id, metric_issues),
                     issues=metric_issues,
-                    suggestions=[issue.recommendation for issue in metric_issues[:3]] or [f"Maintain strong {metric_label.lower()}."],
+                    suggestions=[issue.recommendation for issue in metric_issues[:3]] or [f"Maintain strong {metric.label.lower()}."],
                     linked_sections=sorted({section for issue in metric_issues for section in issue.affected_sections}),
                 )
             )
