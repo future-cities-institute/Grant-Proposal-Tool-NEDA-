@@ -57,7 +57,7 @@ export default function ProposalFeedbackReportPage({ params }: { params: { repor
             <AlertCircle className="h-4 w-4" /> This review report could not be loaded.
           </p>
         ) : !analysis ? (
-          <p className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-100">
             <AlertCircle className="h-4 w-4" /> This saved report does not contain detailed analysis results.
           </p>
         ) : (
@@ -153,8 +153,8 @@ function FeedbackReport({
       </section>
 
       {extractionNeedsReview && (
-        <div className="flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
-          <FileSearch className="mt-0.5 h-5 w-5 shrink-0" />
+        <div className="flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-100">
+          <FileSearch className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
           <div>
             <p className="font-semibold">Confirm the extracted content</p>
             <p className="mt-1 text-sm leading-relaxed">
@@ -171,12 +171,12 @@ function FeedbackReport({
 
       <section className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-lg"><CheckCircle2 className="h-5 w-5 text-emerald-600" /> What is working well</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-lg"><CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /> What is working well</CardTitle></CardHeader>
           <CardContent>
             {strengths.length ? (
               <ul className="space-y-3">
                 {strengths.map((metric) => (
-                  <li key={metric.id} className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                  <li key={metric.id} className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-700/60 dark:bg-emerald-950/35">
                     <p className="font-medium text-foreground">{metric.label}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{metric.categoryLabel} · {metric.score}%</p>
                   </li>
@@ -237,7 +237,7 @@ function FeedbackReport({
                       <ul className="mt-3 space-y-2 border-t border-border pt-3">
                         {metric.issues.map((issue) => (
                           <li key={issue.issue_id} className="text-sm">
-                            <p className="flex items-start gap-2 font-medium text-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /> {issue.message}</p>
+                            <p className="flex items-start gap-2 font-medium text-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" /> {issue.message}</p>
                             <p className="mt-1 pl-6 text-muted-foreground"><span className="font-medium">Recommended action:</span> {issue.recommendation}</p>
                             {issue.excerpt && <p className="mt-1 pl-6 text-xs italic text-muted-foreground">Evidence: “{issue.excerpt}”</p>}
                           </li>

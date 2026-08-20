@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowRight,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -34,6 +34,7 @@ const prepItems = [
 
 export function DashboardScreen() {
   const { user } = useAuth();
+  const [historyTab, setHistoryTab] = useState<"proposals" | "reviews">("proposals");
   const queryClient = useQueryClient();
   const proposalsQuery = useQuery({
     queryKey: ["saved-proposals"],
@@ -105,14 +106,38 @@ export function DashboardScreen() {
             </div>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Saved Proposals</CardTitle>
-                <CardDescription>
-                  Resume a proposal, review recent activity, or start a new draft from a grant package.
-                </CardDescription>
+              <CardHeader className="space-y-4">
+                <div className="grid grid-cols-2 rounded-lg border border-border bg-muted/50 p-1" role="tablist" aria-label="Saved workspace items">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={historyTab === "proposals"}
+                    onClick={() => setHistoryTab("proposals")}
+                    className={`rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${historyTab === "proposals" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Saved Proposals <span className="ml-1 text-xs font-normal">({savedProposals.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={historyTab === "reviews"}
+                    onClick={() => setHistoryTab("reviews")}
+                    className={`rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${historyTab === "reviews" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Review Reports <span className="ml-1 text-xs font-normal">({feedbackReports.length})</span>
+                  </button>
+                </div>
+                <div>
+                  <CardTitle>{historyTab === "proposals" ? "Saved Proposals" : "Proposal Review Reports"}</CardTitle>
+                  <CardDescription className="mt-1">
+                    {historyTab === "proposals"
+                      ? "Resume a proposal, review recent activity, or start a new draft from a grant package."
+                      : "Revisit readiness scores and recommendations from previous proposal reviews."}
+                  </CardDescription>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {proposalsQuery.isLoading ? (
+              <CardContent className="space-y-3" role="tabpanel">
+                {historyTab === "proposals" ? (proposalsQuery.isLoading ? (
                   <p className="rounded-lg border border-border bg-background/40 p-4 text-sm text-muted-foreground">
                     Loading saved proposals...
                   </p>
@@ -155,17 +180,7 @@ export function DashboardScreen() {
                     </div>
                   </div>
                   ))
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Proposal Review Reports</CardTitle>
-                <CardDescription>Revisit readiness scores and recommendations from previous proposal reviews.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {reportsQuery.isLoading ? (
+                )) : reportsQuery.isLoading ? (
                   <p className="rounded-lg border border-border bg-background/40 p-4 text-sm text-muted-foreground">Loading review reports...</p>
                 ) : reportsQuery.isError ? (
                   <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">Could not load proposal review reports.</p>
@@ -202,7 +217,7 @@ export function DashboardScreen() {
                     </div>
                   </div>
                 ))}
-                {deleteReportMutation.isError && <p className="text-sm text-destructive">The review report could not be deleted. Please try again.</p>}
+                {historyTab === "reviews" && deleteReportMutation.isError && <p className="text-sm text-destructive">The review report could not be deleted. Please try again.</p>}
               </CardContent>
             </Card>
           </section>
@@ -221,23 +236,6 @@ export function DashboardScreen() {
               <CardContent>
                 <Link href="/account">
                   <Button variant="outline" className="w-full">Review Community Profile</Button>
-                </Link>
-              </CardContent>
-            </Card>
-
-            <Card className="border-primary/25 bg-primary/5">
-              <CardHeader>
-                <CardTitle className="text-base">Main workflow</CardTitle>
-                <CardDescription>
-                  Generate a new proposal from grant requirements, community context, and supporting documents.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/proposal">
-                  <Button className="w-full">
-                    Continue to Builder
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
                 </Link>
               </CardContent>
             </Card>
