@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -13,6 +14,7 @@ import {
   AlertCircle,
   Clipboard,
   Download,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +39,7 @@ import {
   getCommunityProfile,
   getSavedProposal,
   type SavedProposal,
+  analyzeSavedProposal,
 } from "@/lib/api";
 import {
   COMMUNITY_PROFILE_FIELD_KEYS,
@@ -74,6 +77,7 @@ function safestSavedStep(proposal: SavedProposal): number {
 }
 
 export default function ProposalPage({ searchParams }: { searchParams?: { proposalId?: string } }) {
+  const router = useRouter();
   const requestedProposalId = searchParams?.proposalId || "";
   const communityProfileQuery = useQuery({ queryKey: ["community-profile"], queryFn: getCommunityProfile });
   const savedProposalQuery = useQuery({
@@ -281,6 +285,15 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
     onError: (error) => {
       setExportError(error instanceof Error ? error.message : "DOCX export failed.");
     },
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: async () => {
+      if (!proposalId) throw new Error("Save the proposal before requesting a review.");
+      return analyzeSavedProposal(proposalId);
+    },
+    onSuccess: (report) => router.push(`/proposal-feedback/${report.id}`),
+    onError: (error) => setExportError(error instanceof Error ? error.message : "Proposal review failed."),
   });
 
   const copyFinalProposal = async () => {
@@ -816,6 +829,14 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                   <div className="flex flex-wrap gap-3">
                     <Button variant="outline" onClick={() => setStep(4)} disabled={exportMutation.isPending || docxExportMutation.isPending}>
                       Back to editor
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => feedbackMutation.mutate()}
+                      disabled={!proposalId || finalSections.length === 0 || feedbackMutation.isPending || exportMutation.isPending || docxExportMutation.isPending}
+                    >
+                      {feedbackMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
+                      {feedbackMutation.isPending ? "Reviewing proposal..." : "Review this proposal"}
                     </Button>
                     <Button
                       variant="outline"

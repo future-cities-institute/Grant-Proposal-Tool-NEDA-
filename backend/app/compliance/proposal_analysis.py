@@ -47,7 +47,7 @@ class ProposalAnalysisService:
     def __init__(self, compliance_service: ComplianceEvaluationService) -> None:
         self.compliance_service = compliance_service
 
-    def analyze_upload(self, file_name: str, file_bytes: bytes) -> ProposalAnalysisResponse:
+    def analyze_upload(self, file_name: str, file_bytes: bytes, *, persist_to_legacy_cache: bool = True) -> ProposalAnalysisResponse:
         if len(file_bytes) > MAX_UPLOAD_BYTES:
             raise ValueError("File exceeds the 15 MB upload limit.")
 
@@ -95,8 +95,25 @@ class ProposalAnalysisService:
             extraction_diagnostics=extraction_diagnostics,
             raw_preview_text=cleaned_text or raw_text,
         )
-        self.save_analysis(analysis)
+        if persist_to_legacy_cache:
+            self.save_analysis(analysis)
         return analysis
+
+    def analyze_sections_snapshot(
+        self,
+        *,
+        file_name: str,
+        sections: List[ProposalSection],
+        raw_preview_text: str = "",
+    ) -> ProposalAnalysisResponse:
+        """Analyze finalized workspace sections without writing to the legacy file cache."""
+        ordered_sections = sorted(sections, key=lambda item: item.order)
+        return self._build_analysis(
+            file_name=file_name,
+            file_type="workspace",
+            sections=ordered_sections,
+            raw_preview_text=raw_preview_text or "\n\n".join(section.body for section in ordered_sections),
+        )
 
     def save_analysis(self, analysis: ProposalAnalysisResponse) -> None:
         PROPOSAL_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)

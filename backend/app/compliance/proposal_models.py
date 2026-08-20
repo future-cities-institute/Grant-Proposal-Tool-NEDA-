@@ -64,7 +64,7 @@ class MetricCategoryResult(BaseModel):
 class AnalysisHeader(BaseModel):
     proposal_id: str
     file_name: str
-    file_type: Literal["pdf", "docx"]
+    file_type: Literal["pdf", "docx", "workspace"]
     uploaded_at: datetime
     last_analyzed_at: datetime
 

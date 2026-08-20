@@ -45,6 +45,7 @@ from backend.app.compliance.proposal_models import (
     ProposalReanalyzeRequest,
     ProposalSectionRewriteRequest,
     ProposalSectionRewriteResponse,
+    ProposalSection,
 )
 from backend.app.auth import user_from_authorization_header
 from backend.app.workspace_store import (
@@ -321,6 +322,38 @@ class FeedbackReportRecord(FeedbackReportRequest):
 
 class FeedbackReportListResponse(BaseModel):
     reports: List[FeedbackReportRecord]
+
+
+def _feedback_report_payload(
+    analysis: ProposalAnalysisResponse,
+    *,
+    title: str,
+    source_filename: str = "",
+    source_proposal_id: Optional[str] = None,
+    grant_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    analysis_payload = analysis.model_dump(mode="json")
+    priority_issue_count = sum(
+        1
+        for category in analysis.categories
+        for metric in category.metrics
+        for issue in metric.issues
+        if issue.severity in {"warning", "critical"}
+    )
+    return {
+        "title": title,
+        "source_filename": source_filename,
+        "source_proposal_id": source_proposal_id,
+        "status": "complete",
+        "rubric_version": analysis.rubric_version,
+        "overall_score": analysis.overall_score,
+        "priority_issue_count": priority_issue_count,
+        "category_scores": {category.id: category.score for category in analysis.categories},
+        "report": {"analysis": analysis_payload},
+        "extracted_sections": [section.model_dump(mode="json") for section in analysis.sections],
+        "grant_context": grant_context,
+        "analyzed_at": analysis.analysis.last_analyzed_at.isoformat(),
+    }
 
 
 def current_user(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
@@ -654,6 +687,116 @@ def create_saved_feedback_report(body: FeedbackReportRequest, user: Dict[str, An
     if parent_report and not payload.get("source_proposal_id"):
         payload["source_proposal_id"] = parent_report.get("source_proposal_id")
     payload.update({"status": "complete", "rubric_version": RUBRIC_VERSION})
+    return store_create_feedback_report(user["id"], payload)
+
+
+@app.post("/api/proposal-feedback-reports/analyze-upload", response_model=FeedbackReportRecord)
+async def analyze_uploaded_proposal_for_feedback(
+    proposal_file: UploadFile = File(...),
+    grant_file: Optional[UploadFile] = File(default=None),
+    user: Dict[str, Any] = Depends(current_user),
+):
+    if not proposal_file.filename:
+        raise HTTPException(status_code=400, detail="A PDF or DOCX proposal draft is required.")
+    proposal_name = Path(proposal_file.filename).name[:255]
+    if Path(proposal_name).suffix.lower() not in {".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="Proposal drafts must be PDF or DOCX files.")
+    proposal_content = await proposal_file.read()
+    if len(proposal_content) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Proposal file exceeds the 15 MB upload limit.")
+
+    grant_context = None
+    if grant_file is not None and grant_file.filename:
+        grant_name = Path(grant_file.filename).name[:255]
+        if Path(grant_name).suffix.lower() not in {".pdf", ".docx", ".txt"}:
+            raise HTTPException(status_code=400, detail="Grant guidelines must be a PDF, DOCX, or TXT file.")
+        grant_content = await grant_file.read()
+        if len(grant_content) > 15 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Grant-guideline file exceeds the 15 MB upload limit.")
+        try:
+            from backend.app.parsers.grant_parsers import parse_grant_upload_to_requirements
+
+            class ReviewUpload:
+                def __init__(self, content: bytes, filename: str):
+                    self._stream = BytesIO(content)
+                    self.name = filename
+
+                def read(self, size: int = -1):
+                    return self._stream.read(size)
+
+                def seek(self, offset: int, whence: int = 0):
+                    return self._stream.seek(offset, whence)
+
+                def tell(self):
+                    return self._stream.tell()
+
+                def getvalue(self):
+                    return self._stream.getvalue()
+
+            grant_requirements, grant_text = parse_grant_upload_to_requirements(ReviewUpload(grant_content, grant_name))
+            grant_text = grant_text.strip()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not extract the grant guidelines: {exc}") from exc
+        if not grant_text:
+            raise HTTPException(status_code=400, detail="No readable text was found in the grant guidelines.")
+        grant_context = {
+            "file_name": grant_name,
+            "text": grant_text[:50000],
+            "requirements": grant_requirements or {},
+        }
+
+    try:
+        analysis = get_proposal_analysis_service().analyze_upload(
+            proposal_name,
+            proposal_content,
+            persist_to_legacy_cache=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = _feedback_report_payload(
+        analysis,
+        title=f"{Path(proposal_name).stem[:180]} Review",
+        source_filename=proposal_name,
+        grant_context=grant_context,
+    )
+    return store_create_feedback_report(user["id"], payload)
+
+
+@app.post("/api/proposals/{proposal_id}/feedback-report", response_model=FeedbackReportRecord)
+def analyze_saved_proposal_for_feedback(proposal_id: str, user: Dict[str, Any] = Depends(current_user)):
+    proposal = store_get_proposal(user["id"], proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    source_sections = proposal.get("final_sections") or []
+    if not source_sections:
+        raise HTTPException(status_code=422, detail="Generate and review the proposal before requesting feedback.")
+    sections = [
+        ProposalSection(
+            key=str(section.get("key") or f"section_{index + 1}"),
+            title=str(section.get("title") or f"Section {index + 1}"),
+            body=str(section.get("body") or ""),
+            order=index,
+            word_limit=section.get("word_limit"),
+        )
+        for index, section in enumerate(source_sections)
+    ]
+    title = proposal.get("title") or proposal.get("grant_name") or "Proposal"
+    analysis = get_proposal_analysis_service().analyze_sections_snapshot(
+        file_name=title,
+        sections=sections,
+    )
+    requirements = proposal.get("requirements") or {}
+    grant_context = {
+        "file_name": requirements.get("grant_name") or proposal.get("grant_name") or "Saved grant requirements",
+        "text": str(requirements.get("raw_text") or "")[:50000],
+        "requirements": requirements,
+    } if requirements else None
+    payload = _feedback_report_payload(
+        analysis,
+        title=f"{title} Review",
+        source_proposal_id=proposal_id,
+        grant_context=grant_context,
+    )
     return store_create_feedback_report(user["id"], payload)
 
 

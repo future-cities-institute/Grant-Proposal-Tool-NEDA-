@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock3,
   FileText,
+  FileSearch,
   Plus,
   ShieldCheck,
   Users,
@@ -49,12 +50,20 @@ export function DashboardScreen() {
               Start a new proposal, resume a saved draft, or review the resources that will support the main generation workflow.
             </p>
           </div>
-          <Link href="/proposal" className="self-end">
-            <Button size="lg" className="w-full">
-              <Plus className="mr-2 h-4 w-4" />
-              Start New Proposal
-            </Button>
-          </Link>
+          <div className="space-y-2 self-end">
+            <Link href="/proposal" className="block">
+              <Button size="lg" className="w-full">
+                <Plus className="mr-2 h-4 w-4" />
+                Start New Proposal
+              </Button>
+            </Link>
+            <Link href="/proposal-feedback" className="block">
+              <Button size="lg" variant="outline" className="w-full">
+                <FileSearch className="mr-2 h-4 w-4" />
+                Review an Existing Proposal
+              </Button>
+            </Link>
+          </div>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_460px]">

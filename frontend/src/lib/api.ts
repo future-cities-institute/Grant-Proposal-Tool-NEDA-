@@ -325,7 +325,7 @@ export type ProposalAnalysis = {
   analysis: {
     proposal_id: string;
     file_name: string;
-    file_type: "pdf" | "docx";
+    file_type: "pdf" | "docx" | "workspace";
     uploaded_at: string;
     last_analyzed_at: string;
   };
@@ -628,6 +628,37 @@ export async function getProposalFeedbackReport(reportId: string): Promise<Propo
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Failed to load proposal feedback report");
+  }
+  return res.json();
+}
+
+export async function analyzeProposalUpload(
+  proposalFile: File,
+  grantFile?: File | null
+): Promise<ProposalFeedbackReport> {
+  const form = new FormData();
+  form.append("proposal_file", proposalFile);
+  if (grantFile) form.append("grant_file", grantFile);
+  const res = await fetch(`${API_BASE}/api/proposal-feedback-reports/analyze-upload`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to analyze proposal draft");
+  }
+  return res.json();
+}
+
+export async function analyzeSavedProposal(proposalId: string): Promise<ProposalFeedbackReport> {
+  const res = await fetch(`${API_BASE}/api/proposals/${proposalId}/feedback-report`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to analyze saved proposal");
   }
   return res.json();
 }
