@@ -25,7 +25,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import Depends, FastAPI, File, Header, UploadFile, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -330,6 +330,7 @@ def _feedback_report_payload(
     title: str,
     source_filename: str = "",
     source_proposal_id: Optional[str] = None,
+    parent_report_id: Optional[str] = None,
     grant_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     analysis_payload = analysis.model_dump(mode="json")
@@ -344,6 +345,7 @@ def _feedback_report_payload(
         "title": title,
         "source_filename": source_filename,
         "source_proposal_id": source_proposal_id,
+        "parent_report_id": parent_report_id,
         "status": "complete",
         "rubric_version": analysis.rubric_version,
         "overall_score": analysis.overall_score,
@@ -694,8 +696,14 @@ def create_saved_feedback_report(body: FeedbackReportRequest, user: Dict[str, An
 async def analyze_uploaded_proposal_for_feedback(
     proposal_file: UploadFile = File(...),
     grant_file: Optional[UploadFile] = File(default=None),
+    parent_report_id: Optional[str] = Form(default=None),
     user: Dict[str, Any] = Depends(current_user),
 ):
+    parent_report = None
+    if parent_report_id:
+        parent_report = store_get_feedback_report(user["id"], parent_report_id)
+        if not parent_report:
+            raise HTTPException(status_code=404, detail="Earlier feedback report not found.")
     if not proposal_file.filename:
         raise HTTPException(status_code=400, detail="A PDF or DOCX proposal draft is required.")
     proposal_name = Path(proposal_file.filename).name[:255]
@@ -705,7 +713,7 @@ async def analyze_uploaded_proposal_for_feedback(
     if len(proposal_content) > 15 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Proposal file exceeds the 15 MB upload limit.")
 
-    grant_context = None
+    grant_context = parent_report.get("grant_context") if parent_report else None
     if grant_file is not None and grant_file.filename:
         grant_name = Path(grant_file.filename).name[:255]
         if Path(grant_name).suffix.lower() not in {".pdf", ".docx", ".txt"}:
@@ -758,6 +766,7 @@ async def analyze_uploaded_proposal_for_feedback(
         analysis,
         title=f"{Path(proposal_name).stem[:180]} Review",
         source_filename=proposal_name,
+        parent_report_id=parent_report_id,
         grant_context=grant_context,
     )
     return store_create_feedback_report(user["id"], payload)

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CalendarClock,
@@ -11,13 +11,19 @@ import {
   FileSearch,
   Plus,
   ShieldCheck,
+  Trash2,
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/Providers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { listSavedProposals, type SavedProposal } from "@/lib/api";
+import {
+  deleteProposalFeedbackReport,
+  listProposalFeedbackReports,
+  listSavedProposals,
+  type SavedProposal,
+} from "@/lib/api";
 
 const prepItems = [
   "Grant application package or guidelines",
@@ -28,11 +34,18 @@ const prepItems = [
 
 export function DashboardScreen() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const proposalsQuery = useQuery({
     queryKey: ["saved-proposals"],
     queryFn: listSavedProposals,
   });
   const savedProposals = proposalsQuery.data || [];
+  const reportsQuery = useQuery({ queryKey: ["proposal-feedback-reports"], queryFn: listProposalFeedbackReports });
+  const feedbackReports = reportsQuery.data || [];
+  const deleteReportMutation = useMutation({
+    mutationFn: deleteProposalFeedbackReport,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proposal-feedback-reports"] }),
+  });
   const exportedCount = savedProposals.filter((proposal) => proposal.status === "exported").length;
   const lastActivity = savedProposals[0]?.updated_at ? formatActivityTime(savedProposals[0].updated_at) : "No activity";
   const displayName = getDisplayName(user);
@@ -143,6 +156,53 @@ export function DashboardScreen() {
                   </div>
                   ))
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Proposal Review Reports</CardTitle>
+                <CardDescription>Revisit readiness scores and recommendations from previous proposal reviews.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {reportsQuery.isLoading ? (
+                  <p className="rounded-lg border border-border bg-background/40 p-4 text-sm text-muted-foreground">Loading review reports...</p>
+                ) : reportsQuery.isError ? (
+                  <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">Could not load proposal review reports.</p>
+                ) : feedbackReports.length === 0 ? (
+                  <div className="rounded-lg border border-border bg-background/40 p-5">
+                    <p className="font-medium text-foreground">No review reports yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Upload an existing proposal or review a generated draft to create your first readiness report.</p>
+                  </div>
+                ) : feedbackReports.map((report) => (
+                  <div key={report.id} className="flex flex-col gap-3 rounded-lg border border-border bg-background/40 p-4 sm:flex-row sm:items-center">
+                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <span className="text-lg font-semibold leading-none">{Math.round(report.overall_score || 0)}</span>
+                      <span className="text-[10px]">/100</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-foreground">{report.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {report.priority_issue_count} priority finding{report.priority_issue_count === 1 ? "" : "s"} · {formatActivityTime(report.analyzed_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/proposal-feedback/${report.id}`}><Button variant="outline" size="sm">View report</Button></Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Delete ${report.title}`}
+                        disabled={deleteReportMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete “${report.title}”? This cannot be undone.`)) deleteReportMutation.mutate(report.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {deleteReportMutation.isError && <p className="text-sm text-destructive">The review report could not be deleted. Please try again.</p>}
               </CardContent>
             </Card>
           </section>

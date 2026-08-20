@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { AlertCircle, FileCheck2, FileText, Loader2, Upload } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -13,13 +14,15 @@ const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 export default function ProposalFeedbackUploadPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const parentReportId = searchParams.get("parentReportId");
   const [proposalFile, setProposalFile] = useState<File | null>(null);
   const [grantFile, setGrantFile] = useState<File | null>(null);
   const [inputError, setInputError] = useState("");
   const analysisMutation = useMutation({
     mutationFn: () => {
       if (!proposalFile) throw new Error("Select a proposal draft to continue.");
-      return analyzeProposalUpload(proposalFile, grantFile);
+      return analyzeProposalUpload(proposalFile, grantFile, parentReportId);
     },
     onSuccess: (report) => router.push(`/proposal-feedback/${report.id}`),
   });
@@ -51,10 +54,17 @@ export default function ProposalFeedbackUploadPage() {
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <p className="text-sm font-medium text-primary">Proposal review</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">Review an existing proposal</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
+            {parentReportId ? "Review a revised proposal" : "Review an existing proposal"}
+          </h1>
           <p className="mt-2 max-w-3xl text-muted-foreground">
             Upload a draft for a standardized proposal-readiness review. Adding the relevant grant guidelines provides context for funding-alignment findings.
           </p>
+          {parentReportId && (
+            <p className="mt-3 rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm text-foreground">
+              This review will be saved as a new version and compared with your earlier report. Previously supplied grant guidelines will be reused unless you select a replacement below.
+            </p>
+          )}
         </div>
 
         <Card>

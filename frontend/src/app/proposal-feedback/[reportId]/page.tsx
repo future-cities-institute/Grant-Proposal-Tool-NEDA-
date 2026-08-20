@@ -10,10 +10,12 @@ import {
   ChevronDown,
   FileSearch,
   Loader2,
+  Printer,
   Target,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   getProposalFeedbackReport,
   type ProposalAnalysis,
@@ -34,6 +36,12 @@ export default function ProposalFeedbackReportPage({ params }: { params: { repor
   });
   const report = reportQuery.data;
   const analysis = getAnalysis(report?.report?.analysis);
+  const parentQuery = useQuery({
+    queryKey: ["proposal-feedback-report", report?.parent_report_id],
+    queryFn: () => getProposalFeedbackReport(report!.parent_report_id!),
+    enabled: Boolean(report?.parent_report_id),
+  });
+  const parentAnalysis = getAnalysis(parentQuery.data?.report?.analysis);
 
   return (
     <AppShell>
@@ -53,7 +61,7 @@ export default function ProposalFeedbackReportPage({ params }: { params: { repor
             <AlertCircle className="h-4 w-4" /> This saved report does not contain detailed analysis results.
           </p>
         ) : (
-          <FeedbackReport report={report} analysis={analysis} />
+          <FeedbackReport report={report} analysis={analysis} parentAnalysis={parentAnalysis} />
         )}
       </main>
     </AppShell>
@@ -63,9 +71,11 @@ export default function ProposalFeedbackReportPage({ params }: { params: { repor
 function FeedbackReport({
   report,
   analysis,
+  parentAnalysis,
 }: {
   report: ProposalFeedbackReport;
   analysis: ProposalAnalysis;
+  parentAnalysis: ProposalAnalysis | null;
 }) {
   const priorities = buildPriorities(analysis);
   const strengths = analysis.categories
@@ -81,13 +91,28 @@ function FeedbackReport({
 
   return (
     <>
-      <header>
-        <p className="text-sm font-medium text-primary">Saved proposal review</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{report.title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Analyzed {new Date(report.analyzed_at).toLocaleString()} · Rubric {analysis.rubric_version}
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-primary">Saved proposal review</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{report.title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Analyzed {new Date(report.analyzed_at).toLocaleString()} · Rubric {analysis.rubric_version}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 print:hidden">
+          <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print or save PDF</Button>
+          <Link href={`/proposal-feedback?parentReportId=${report.id}`}><Button>Review a revised draft</Button></Link>
+        </div>
       </header>
+
+      {parentAnalysis && (
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
+          <p className="text-sm font-semibold text-foreground">Change since the previous review</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Readiness score {formatScoreChange(analysis.overall_score - parentAnalysis.overall_score)} from {parentAnalysis.overall_score} to {analysis.overall_score}.
+          </p>
+        </div>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <Card className="border-primary/30 bg-primary/5">
@@ -264,4 +289,10 @@ function buildPriorities(analysis: ProposalAnalysis): PriorityFinding[] {
       metricScore: metric.score,
     }))))
     .sort((left, right) => severityRank[left.severity] - severityRank[right.severity] || left.metricScore - right.metricScore || right.confidence_score - left.confidence_score);
+}
+
+function formatScoreChange(change: number) {
+  if (change > 0) return `increased by ${change} point${change === 1 ? "" : "s"}`;
+  if (change < 0) return `decreased by ${Math.abs(change)} point${change === -1 ? "" : "s"}`;
+  return "was unchanged";
 }

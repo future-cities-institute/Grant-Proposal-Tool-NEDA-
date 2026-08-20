@@ -636,11 +636,13 @@ export async function getProposalFeedbackReport(reportId: string): Promise<Propo
 
 export async function analyzeProposalUpload(
   proposalFile: File,
-  grantFile?: File | null
+  grantFile?: File | null,
+  parentReportId?: string | null,
 ): Promise<ProposalFeedbackReport> {
   const form = new FormData();
   form.append("proposal_file", proposalFile);
   if (grantFile) form.append("grant_file", grantFile);
+  if (parentReportId) form.append("parent_report_id", parentReportId);
   const res = await fetch(`${API_BASE}/api/proposal-feedback-reports/analyze-upload`, {
     method: "POST",
     headers: await authHeaders(),
@@ -651,6 +653,17 @@ export async function analyzeProposalUpload(
     throw new Error(err.detail || "Failed to analyze proposal draft");
   }
   return res.json();
+}
+
+export async function deleteProposalFeedbackReport(reportId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/proposal-feedback-reports/${reportId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to delete proposal feedback report");
+  }
 }
 
 export async function analyzeSavedProposal(proposalId: string): Promise<ProposalFeedbackReport> {
