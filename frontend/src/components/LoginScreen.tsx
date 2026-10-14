@@ -158,7 +158,7 @@ export function LoginScreen() {
                       Continue without signing in
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Local only. Opens the development workspace without contacting Supabase.
+                      Opens the shared workspace without a Supabase account.
                     </p>
                   </div>
                 )}

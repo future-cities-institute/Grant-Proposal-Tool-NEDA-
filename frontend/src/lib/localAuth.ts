@@ -3,8 +3,7 @@ import type { User } from "@supabase/supabase-js";
 const STORAGE_KEY = "local_auth_bypass";
 
 export function canUseLocalBypass() {
-  if (typeof window === "undefined") return false;
-  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  return typeof window !== "undefined";
 }
 
 export function isLocalBypassEnabled() {
