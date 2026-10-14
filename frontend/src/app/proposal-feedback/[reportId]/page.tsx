@@ -101,7 +101,9 @@ function FeedbackReport({
         </div>
         <div className="flex flex-wrap gap-2 print:hidden">
           <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print or save PDF</Button>
-          <Link href={`/proposal-feedback?parentReportId=${report.id}`}><Button>Review a revised draft</Button></Link>
+          <Button asChild>
+            <Link href={`/proposal-feedback?parentReportId=${report.id}`}>Review a revised draft</Link>
+          </Button>
         </div>
       </header>
 

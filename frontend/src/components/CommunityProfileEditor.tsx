@@ -54,8 +54,10 @@ export function CommunityProfileEditor() {
   const profileQuery = useQuery({ queryKey: ["community-profile"], queryFn: getCommunityProfile });
   const [values, setValues] = useState<ProfileValues>({});
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError, setSaveError] = useState("");
   const [savedRecord, setSavedRecord] = useState<CommunityProfileRecord | null>(null);
   const hydratedRef = useRef(false);
+  const valuesRef = useRef<ProfileValues>({});
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestSaveRef = useRef(0);
   const lastSavedValuesRef = useRef("");
@@ -66,6 +68,7 @@ export function CommunityProfileEditor() {
   useEffect(() => {
     if (profileQuery.isLoading || hydratedRef.current) return;
     const loadedValues = profileQuery.data?.profile || {};
+    valuesRef.current = loadedValues;
     setValues(loadedValues);
     setSavedRecord(profileQuery.data || null);
     lastSavedValuesRef.current = JSON.stringify(loadedValues);
@@ -74,7 +77,7 @@ export function CommunityProfileEditor() {
   }, [profileQuery.data, profileQuery.isLoading]);
 
   const persistValues = useCallback(
-    (nextValues: ProfileValues) => {
+    (nextValues: ProfileValues = valuesRef.current, options?: { keepalive?: boolean }) => {
       const serializedValues = JSON.stringify(nextValues);
       if (!hydratedRef.current || serializedValues === lastSavedValuesRef.current) {
         return Promise.resolve(null);
@@ -83,26 +86,33 @@ export function CommunityProfileEditor() {
       const saveId = latestSaveRef.current + 1;
       latestSaveRef.current = saveId;
       setSaveStatus("saving");
+      setSaveError("");
       const task = saveChainRef.current
         .catch(() => undefined)
         .then(async () => {
-          const record = await saveCommunityProfile(nextValues);
-          const responseMatches = Object.entries(nextValues).every(
-            ([key, value]) => record.profile[key as ProfileKey] === value
-          );
+          const record = await saveCommunityProfile(nextValues, options);
+          const responseMatches = Object.entries(nextValues).every(([key, value]) => {
+            const returned = record.profile[key as ProfileKey];
+            if (value && typeof value === "object") return JSON.stringify(returned) === JSON.stringify(value);
+            return returned === value;
+          });
           if (!responseMatches) throw new Error("The saved profile did not match the submitted values.");
           return record;
         });
       saveChainRef.current = task;
       void task.then(
         (record) => {
+          if (!record) return;
           setSavedRecord(record);
-          lastSavedValuesRef.current = JSON.stringify(record.profile);
+          lastSavedValuesRef.current = JSON.stringify(nextValues);
           queryClient.setQueryData(["community-profile"], record);
           if (latestSaveRef.current === saveId) setSaveStatus("saved");
         },
-        () => {
-          if (latestSaveRef.current === saveId) setSaveStatus("error");
+        (error: unknown) => {
+          if (latestSaveRef.current === saveId) {
+            setSaveStatus("error");
+            setSaveError(error instanceof Error ? error.message : "Save failed");
+          }
         }
       );
       return task;
@@ -113,16 +123,29 @@ export function CommunityProfileEditor() {
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (JSON.stringify(values) === lastSavedValuesRef.current) return;
-    setSaveStatus("saving");
     const timeoutId = window.setTimeout(() => {
-      void persistValues(values);
-    }, 1200);
+      void persistValues(valuesRef.current);
+    }, 600);
     return () => window.clearTimeout(timeoutId);
   }, [persistValues, values]);
 
+  useEffect(() => {
+    const flush = () => {
+      if (!hydratedRef.current) return;
+      if (JSON.stringify(valuesRef.current) === lastSavedValuesRef.current) return;
+      void persistValues(valuesRef.current, { keepalive: true });
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [persistValues]);
+
   const updateValue = (key: ProfileKey, value: string) => {
-    setSaveStatus("saving");
-    setValues((current) => ({ ...current, [key]: value }));
+    const next = { ...valuesRef.current, [key]: value };
+    valuesRef.current = next;
+    setValues(next);
   };
 
   if (profileQuery.isLoading) {
@@ -158,14 +181,14 @@ export function CommunityProfileEditor() {
           <div className="text-sm" role="status">
             {saveStatus === "saving" && <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>}
             {saveStatus === "saved" && <span className="flex items-center gap-2 text-emerald-500"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
-            {saveStatus === "error" && <span className="flex items-center gap-2 text-destructive"><AlertCircle className="h-4 w-4" /> Save failed; your entries remain here.</span>}
+            {saveStatus === "error" && <span className="flex items-center gap-2 text-destructive"><AlertCircle className="h-4 w-4" /> {saveError || "Save failed; your entries remain here."}</span>}
           </div>
         </div>
         {savedRecord?.updated_at && hasSavedDetails && (
           <p className="text-xs text-muted-foreground">Last saved {new Date(savedRecord.updated_at).toLocaleString()}</p>
         )}
       </CardHeader>
-      <CardContent className="space-y-6" onBlur={() => void persistValues(values)}>
+      <CardContent className="space-y-6" onBlur={() => void persistValues(valuesRef.current)}>
         {!hasSavedDetails && (
           <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm">
             <p className="font-medium text-foreground">No Community Profile details have been saved yet.</p>
@@ -201,7 +224,7 @@ export function CommunityProfileEditor() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-          <Button type="button" onClick={() => void persistValues(values)} disabled={saveStatus === "saving"}>
+          <Button type="button" onClick={() => void persistValues(valuesRef.current)}>
             {saveStatus === "saving" ? "Saving..." : "Save Community Profile"}
           </Button>
           <p className="text-sm text-muted-foreground">

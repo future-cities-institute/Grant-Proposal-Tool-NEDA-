@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, FileText, LockKeyhole, Mail, ShieldCheck, Sparkles } from "lucide-react";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/components/Providers";
+import { canUseLocalBypass } from "@/lib/localAuth";
 import { supabase } from "@/lib/supabase";
 
 const highlights = [
@@ -20,22 +21,38 @@ const prep = ["Upload grant package", "Complete community intake", "Review and e
 
 export function LoginScreen() {
   const router = useRouter();
+  const { startLocalSession } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [allowBypass, setAllowBypass] = useState(false);
+
+  useEffect(() => {
+    setAllowBypass(canUseLocalBypass());
+  }, []);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setError(describeSignInError(error.message));
+        return;
+      }
+      router.push("/dashboard");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Sign-in failed.";
+      setError(describeSignInError(message));
+    } finally {
+      setLoading(false);
     }
-    router.push("/dashboard");
+  }
+
+  function continueLocally() {
+    startLocalSession();
   }
 
   return (
@@ -79,10 +96,6 @@ export function LoginScreen() {
 
         <section className="flex items-center justify-center p-6 sm:p-10">
           <div className="w-full max-w-md">
-            <div className="mb-6 flex justify-end">
-              <ThemeToggle />
-            </div>
-
             <Card>
               <CardHeader>
                 <div className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
@@ -139,6 +152,17 @@ export function LoginScreen() {
                   </Button>
                 </form>
 
+                {allowBypass && (
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <Button type="button" variant="outline" className="w-full" onClick={continueLocally}>
+                      Continue without signing in
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Local only. Opens the development workspace without contacting Supabase.
+                    </p>
+                  </div>
+                )}
+
                 <div className="rounded-lg border border-border bg-muted/30 p-3">
                   <p className="text-xs font-medium text-foreground">Generation flow</p>
                   <div className="mt-3 space-y-2">
@@ -157,4 +181,11 @@ export function LoginScreen() {
       </div>
     </div>
   );
+}
+
+function describeSignInError(message: string) {
+  if (/failed to fetch/i.test(message)) {
+    return "Sign-in could not reach Supabase, so the browser reported “Failed to fetch” before checking the password. The project URL in the frontend environment is not responding. Use Continue without signing in on this computer.";
+  }
+  return message;
 }

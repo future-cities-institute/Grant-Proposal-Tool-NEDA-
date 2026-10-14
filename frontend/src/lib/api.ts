@@ -524,11 +524,15 @@ export async function getCommunityProfile(): Promise<CommunityProfileRecord | nu
   return res.json();
 }
 
-export async function saveCommunityProfile(profile: Partial<CommunityProfile>): Promise<CommunityProfileRecord> {
+export async function saveCommunityProfile(
+  profile: Partial<CommunityProfile>,
+  options?: { keepalive?: boolean }
+): Promise<CommunityProfileRecord> {
   const res = await fetch(`${API_BASE}/api/community-profile`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ profile }),
+    keepalive: options?.keepalive,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

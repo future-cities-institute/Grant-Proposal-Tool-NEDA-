@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Database, KeyRound, Mail, Save, UserRound } from "lucide-react";
+import Link from "next/link";
+import { Database, FileSearch, FolderOpen, KeyRound, Mail, Plus, Save, UserRound } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/Providers";
 import { Button } from "@/components/ui/button";
@@ -107,22 +108,28 @@ export default function AccountPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Data controls</CardTitle>
+              <CardTitle>Proposal workspace</CardTitle>
               <CardDescription>
-                Control saved proposals, uploaded grant packages, and generated drafts.
+                Open the screens where you manage saved proposals, downloads, and reviews.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
               {[
-                "Delete saved proposal",
-                "Download proposal data",
-                "Remove uploaded grant package",
-                "Clear generated drafts",
-              ].map((action) => (
-                <Button key={action} variant="outline" className="justify-start">
-                  {action}
-                </Button>
-              ))}
+                { label: "Saved proposals", href: "/dashboard", icon: FolderOpen },
+                { label: "Start a new proposal", href: "/proposal", icon: Plus },
+                { label: "Review an existing proposal", href: "/proposal-feedback", icon: FileSearch },
+                { label: "Proposal resources", href: "/resources", icon: Database },
+              ].map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Button key={action.href} variant="outline" className="justify-start" asChild>
+                    <Link href={action.href}>
+                      <Icon className="mr-2 h-4 w-4" />
+                      {action.label}
+                    </Link>
+                  </Button>
+                );
+              })}
             </CardContent>
           </Card>
         </section>

@@ -126,12 +126,12 @@ export default function ProposalDetailPage({ params }: { params: { proposalId: s
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/proposal?proposalId=${params.proposalId}`}>
-              <Button variant="outline">
+            <Button variant="outline" asChild>
+              <Link href={`/proposal?proposalId=${params.proposalId}`}>
                 <PencilLine className="mr-2 h-4 w-4" />
                 Continue editing
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <Button
               variant="outline"
               onClick={() => void copySavedProposal()}

@@ -48,12 +48,12 @@ export default function ResourcesPage() {
               Guidance to help prepare stronger proposal inputs, review generated sections, and export with confidence.
             </p>
           </div>
-          <Link href="/proposal">
-            <Button>
+          <Button asChild className="shrink-0">
+            <Link href="/proposal" className="inline-flex items-center whitespace-nowrap">
               Start New Proposal
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
+              <ArrowRight className="ml-2 h-4 w-4 shrink-0" />
+            </Link>
+          </Button>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-3">

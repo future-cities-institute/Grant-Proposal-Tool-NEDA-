@@ -16,7 +16,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="light">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `document.documentElement.classList.remove("dark");try{localStorage.removeItem("theme_mode")}catch(e){}`,
+          }}
+        />
+      </head>
       <body className={`${inter.className} app-neon-bg min-h-screen gradient-bg`}>
         <Providers>{children}</Providers>
       </body>

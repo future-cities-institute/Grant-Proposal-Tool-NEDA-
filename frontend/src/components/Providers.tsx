@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Session, User } from "@supabase/supabase-js";
+import { clearLocalBypass, enableLocalBypass, isLocalBypassEnabled, localBypassUser } from "@/lib/localAuth";
 import { supabase } from "@/lib/supabase";
 
 type AuthContextValue = {
@@ -11,6 +12,7 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  startLocalSession: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -18,50 +20,87 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   signOut: async () => {},
+  startLocalSession: () => {},
 });
 
 export function useAuth() {
   return useContext(AuthContext);
 }
 
-const PUBLIC_PATHS = ["/login"];
+function isPublicPath(pathname: string) {
+  return pathname === "/" || pathname === "/login";
+}
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [bypassed, setBypassed] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const signedIn = Boolean(session) || bypassed;
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    const bypass = isLocalBypassEnabled();
+    setBypassed(bypass);
+    let active = true;
+    if (bypass) {
       setLoading(false);
+    } else {
+      supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (active) setSession(data.session);
+        })
+        .catch(() => {
+          if (active) setSession(null);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     if (loading) return;
-    const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-    if (!session && !isPublic) {
+    const isPublic = isPublicPath(pathname);
+    if (!signedIn && !isPublic) {
       router.replace("/login");
     }
-    if (session && pathname === "/login") {
+    if (signedIn && (pathname === "/" || pathname === "/login")) {
       router.replace("/dashboard");
     }
-  }, [session, loading, pathname, router]);
+  }, [signedIn, loading, pathname, router]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    clearLocalBypass();
+    setBypassed(false);
+    setSession(null);
+    await supabase.auth.signOut().catch(() => undefined);
     router.replace("/login");
   };
 
-  if (loading) {
+  const startLocalSession = () => {
+    enableLocalBypass();
+    setBypassed(true);
+  };
+
+  const isPublic = isPublicPath(pathname);
+  const waitingForRedirect =
+    loading ||
+    (!signedIn && !isPublic) ||
+    (signedIn && (pathname === "/" || pathname === "/login"));
+  const user: User | null = session?.user ?? (bypassed ? localBypassUser() : null);
+
+  if (waitingForRedirect) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -70,7 +109,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, loading, signOut, startLocalSession }}>
       {children}
     </AuthContext.Provider>
   );

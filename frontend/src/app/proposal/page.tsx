@@ -50,7 +50,6 @@ import {
 import { ProposalSections } from "@/components/ProposalSections";
 import { ReportView } from "@/components/ReportView";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { ContactFci } from "@/components/ContactFci";
 import { copyProposalText, formatProposalText } from "@/lib/proposalClipboard";
 
@@ -551,7 +550,9 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
             <p className="flex items-center gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4" /> This saved proposal could not be loaded.
             </p>
-            <Link href="/dashboard"><Button variant="outline">Return to dashboard</Button></Link>
+            <Button variant="outline" asChild>
+              <Link href="/dashboard">Return to dashboard</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -575,38 +576,49 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
             )}
           </div>
           <ContactFci />
-          <ThemeToggle />
         </div>
         {/* Stepper */}
         <div className="border-t border-border bg-muted/30 px-4 py-3">
           <div className="container mx-auto flex items-center gap-2">
             {STEPS.map((s, i) => (
               <div key={s.id} className="flex items-center gap-2">
-                <div
+                <button
+                  type="button"
+                  disabled={s.id > step}
+                  onClick={() => {
+                    if (s.id < step) setStep(s.id);
+                  }}
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium",
-                    step > s.id
-                      ? "bg-neda-gold text-slate-900"
-                      : step === s.id
+                    "flex items-center gap-2 rounded-lg px-1 py-1 text-left",
+                    s.id < step && "hover:bg-muted/70",
+                    s.id > step && "cursor-default"
+                  )}
+                  aria-current={step === s.id ? "step" : undefined}
+                >
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium",
+                      step >= s.id
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {step > s.id ? <Check className="h-4 w-4" /> : s.id}
-                </div>
-                <span
-                  className={cn(
-                    "text-sm font-medium",
-                    step >= s.id ? "text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  {s.label}
-                </span>
+                    )}
+                  >
+                    {step > s.id ? <Check className="h-4 w-4" /> : s.id}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      step >= s.id ? "text-foreground" : "text-muted-foreground"
+                    )}
+                  >
+                    {s.label}
+                  </span>
+                </button>
                 {i < STEPS.length - 1 && (
                   <div
                     className={cn(
                       "mx-1 h-0.5 w-6 rounded",
-                      step > s.id ? "bg-neda-gold" : "bg-muted"
+                      step > s.id ? "bg-primary" : "bg-muted"
                     )}
                   />
                 )}
@@ -684,7 +696,7 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
                 </CardContent>
               </Card>
 
-              <Card className="border-l-4 border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20">
+              <Card className="border-l-4 border-l-primary bg-muted/40">
                 <CardHeader>
                   <CardTitle className="text-base">Community context (optional)</CardTitle>
                   <CardDescription>

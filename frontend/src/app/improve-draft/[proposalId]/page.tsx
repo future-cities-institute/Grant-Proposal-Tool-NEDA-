@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, FileText, Loader2, RefreshCcw, Save, Sparkles } from "lucide-react";
 
 import { OverallScoreCard } from "@/components/OverallScoreCard";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -555,7 +554,6 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
               <ArrowLeft className="h-4 w-4" />
               Home
             </Link>
-            <ThemeToggle />
           </div>
         </header>
         <main className="container mx-auto max-w-5xl px-4 py-12">
@@ -581,7 +579,6 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
               <ArrowLeft className="h-4 w-4" />
               Home
             </Link>
-            <ThemeToggle />
           </div>
         </header>
         <main className="container mx-auto max-w-4xl px-4 py-12">
@@ -613,7 +610,6 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
             Home
           </Link>
           <div className="text-sm text-muted-foreground">Improve Existing Draft</div>
-          <ThemeToggle />
         </div>
       </header>
       <main className="container mx-auto max-w-[1600px] px-4 py-8">
@@ -815,7 +811,7 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
                             <h3 className="text-[28px] font-semibold tracking-tight text-slate-900">{section.title}</h3>
                             {section.word_limit ? (
                               <div className="mt-3 flex flex-wrap gap-2">
-                                <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700">
+                                <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-foreground">
                                   Word limit: {section.word_limit} words
                                 </span>
                               </div>

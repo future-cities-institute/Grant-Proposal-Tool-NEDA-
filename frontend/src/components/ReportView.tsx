@@ -703,7 +703,7 @@ export function ReportView({
           {missingInfoSections.length > 0 ? (
             <div className="space-y-3">
               {missingInfoSections.slice(0, 6).map((section) => (
-                <div key={section.key} className="rounded-lg border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-card/40">
+                <div key={section.key} className="rounded-lg border border-amber-500/30 bg-card/80 p-3 dark:border-amber-500/20 dark:bg-card/40">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-2">
                       <p className="font-medium text-foreground">{section.title}</p>
@@ -747,7 +747,7 @@ export function ReportView({
           ) : topQualityIssues.length > 0 ? (
             <div className="space-y-3">
               {topQualityIssues.map((gap) => (
-                <div key={`${gap.section}-${gap.failed_check_id}`} className="rounded-lg border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-card/40">
+                <div key={`${gap.section}-${gap.failed_check_id}`} className="rounded-lg border border-amber-500/30 bg-card/80 p-3 dark:border-amber-500/20 dark:bg-card/40">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium text-foreground">
@@ -1232,7 +1232,7 @@ export function ReportView({
             {gaps.length > 0 ? (
               <div className="space-y-4 text-sm text-muted-foreground">
                 {Object.entries(groupedGaps).map(([sectionLabel, sectionGaps]) => (
-                  <div key={sectionLabel} className="rounded-md border border-rose-500/30 bg-white/70 p-3 dark:border-rose-500/20 dark:bg-rose-950/10">
+                  <div key={sectionLabel} className="rounded-md border border-rose-500/30 bg-card/80 p-3 dark:border-rose-500/20 dark:bg-rose-950/10">
                     <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-rose-700 dark:text-rose-200/80">
                       {sectionLabel}
                     </p>
@@ -1253,7 +1253,7 @@ export function ReportView({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-rose-500/40 bg-white/50 text-rose-700 hover:bg-rose-50 dark:bg-transparent dark:text-rose-200 dark:hover:bg-rose-950/30"
+                              className="border-rose-500/40 bg-card/70 text-rose-700 hover:bg-rose-50 dark:bg-transparent dark:text-rose-200 dark:hover:bg-rose-950/30"
                               onClick={() => jumpToSection(gap.section)}
                             >
                               Open section
@@ -1307,7 +1307,7 @@ export function ReportView({
             {warnings.length > 0 ? (
               <div className="space-y-4 text-sm text-muted-foreground">
                 {Object.entries(groupedWarnings).map(([sectionLabel, sectionWarnings]) => (
-                  <div key={sectionLabel} className="rounded-md border border-amber-500/30 bg-white/70 p-3 dark:border-amber-500/20 dark:bg-amber-950/10">
+                  <div key={sectionLabel} className="rounded-md border border-amber-500/30 bg-card/80 p-3 dark:border-amber-500/20 dark:bg-amber-950/10">
                     <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200/80">
                       {sectionLabel}
                     </p>
@@ -1322,7 +1322,7 @@ export function ReportView({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-amber-500/40 bg-white/50 text-amber-700 hover:bg-amber-50 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-950/30"
+                              className="border-amber-500/40 bg-card/70 text-amber-700 hover:bg-amber-50 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-950/30"
                               onClick={() => jumpToSection(warning.section)}
                             >
                               Open section
