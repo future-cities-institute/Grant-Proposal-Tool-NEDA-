@@ -14,6 +14,8 @@ from backend.app.rag.use_cases import collection_for_use_case, normalize_use_cas
 _RAG_AVAILABLE: Optional[bool] = None
 logger = logging.getLogger(__name__)
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+# The fact-check pass needs a model that follows citation rules reliably; gpt-4o-mini did not in testing.
+FACT_CHECK_MODEL = os.getenv("OPENAI_FACT_CHECK_MODEL", "gpt-4.1")
 APP_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "data" / "app_library"
 BASE_RAG_COLLECTION = "grant_library"
 
@@ -143,6 +145,23 @@ def _get_keyword_rag_context(query: str, top_k: int = 6) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+_DEPTH_SKIP_FIELDS = {"indicators_before", "indicators_after", "scenario", "requested_budget", "total_project_cost"}
+
+
+def _input_depth(profile: Dict[str, Any]) -> Dict[str, str]:
+    """Label how much the applicant wrote for each filled text field, so length can follow the input."""
+    depth: Dict[str, str] = {}
+    for key, value in (profile or {}).items():
+        if key in _DEPTH_SKIP_FIELDS or not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text or text.lower() in _UNKNOWN_FIELD_VALUES:
+            continue
+        words = len(text.split())
+        depth[key] = "brief" if words <= 25 else "moderate" if words <= 80 else "detailed"
+    return depth
+
+
 def _build_payload(
     draft: Dict[str, Any],
     requirements: Dict[str, Any],
@@ -163,6 +182,7 @@ def _build_payload(
 
     payload = {
         "grant_name": grant_name,
+        "input_depth": _input_depth(profile),
         "community_profile": {
             "community_name": profile.get("community_name", ""),
             "region": profile.get("region", ""),
@@ -266,17 +286,59 @@ def _build_payload(
             rural, and community-led economic development initiatives.
             Write content that is submission-ready with minimal editing.
 
-            For sections without prompt_items, write in long-form paragraphs only.
-            Each section should be 2–5 well-developed paragraphs with clear transitions.
+            LENGTH FOLLOWS THE SOURCE MATERIAL. input_depth tells you how much the applicant
+            wrote for each profile field ("brief" = one short sentence or phrase, "moderate",
+            "detailed"). Length must come from facts, never from filler:
+            - Every sentence must carry a fact, figure, name, or commitment found in the
+              community profile, verified_budget_calculations, supporting documents, or the
+              grant text. A sentence that only restates, praises, or generalizes adds nothing; leave it out.
+            - When the relevant inputs are brief, still write one full paragraph (about 4-6
+              sentences, roughly 60-110 words) for each narrative prompt, or one to two paragraphs
+              for a section without prompt_items. Build it from substance, not filler:
+              state the applicant's answer clearly; bring in related facts from other profile
+              fields (community context, priorities, challenges, partners, population, activities,
+              timeline, budget, supporting documents); and explain how those facts answer the
+              question and fit the funder's stated priorities. Explanation that follows directly
+              from the facts is fine (e.g. activities that run after school address a lack of
+              after-school options). New facts are not.
+              Worked example. Inputs: expected_outcomes "More youth taking part in sport";
+              challenges "Youth have little to do after school"; project_activities "Hire a
+              coordinator and run weekly sessions at the arena"; target_beneficiaries "Youth in the
+              community"; timeline "One year". Question: "What outcomes do you expect?"
+              Good paragraph: "The main outcome the Hamlet expects is more youth in Chesterfield
+              Inlet taking part in sport. Today, youth have little to do after school, so a regular,
+              organized option is the change the project is built around. Over the one-year project,
+              a coordinator will run weekly sessions at the arena, giving youth a consistent place
+              and time to play. Because the sessions are weekly and run for the full year, the
+              outcome is about steady participation rather than a one-time event."
+              Every sentence there comes from an input or links inputs together. Bad additions:
+              "improving physical health and social skills", "fostering healthier lifestyles",
+              "engaging a significant portion of youth", "measured through attendance tracking".
+            - When the relevant inputs are moderate or detailed, write fuller answers (one to two
+              paragraphs per prompt, or 2-4 paragraphs for a section without prompt_items),
+              using the specific details provided.
+            - Never repeat the same fact twice to reach a length; if the inputs genuinely support
+              less, write less rather than padding.
+            For sections without prompt_items, write paragraphs, not lists.
             For sections with prompt_items, do not write a single blended section response.
             Instead, produce one distinct answer block per prompt.
-            Each prompt answer should usually be 3-6 substantive sentences when the
-            available profile and grant context support it. For narrative prompts such as
-            need, design, work plan, engagement, outcomes, risk, sustainability, governance,
-            or budget/value, include concrete implementation detail, evidence, roles,
-            timeline, and rationale from the profile instead of one-sentence answers.
             Short factual prompts such as legal name, contact email, requested amount,
-            dates, or registration number may remain concise.
+            dates, or registration number stay concise.
+
+            When a question asks for more than the inputs cover (for example it asks for
+            evidence, measures, roles, or numbers the applicant did not give), answer the part
+            the inputs support and leave the rest out of the answer text. Put what is missing in
+            review_note (e.g. "Add how participation will be counted") and set confidence to low.
+            Never fill the gap yourself. In particular, do not invent:
+            - evidence, survey findings, or what people said or asked for
+              (if the applicant wrote "we talked to youth", do not say what youth expressed);
+            - measurement methods, data sources, surveys, tracking, or evaluation schedules;
+            - outcomes or benefits beyond those stated (e.g. health, social skills, well-being);
+            - roles, responsibilities, phases, or milestones beyond those stated;
+            - effects of the engagement (e.g. "fostered ownership") or intentions ("actively pursue").
+            Avoid filler such as "pressing need", "robust", "holistic", "comprehensive",
+            "safe and supportive environment", "long-term vision", "ensure success",
+            "leverage", "enhance overall well-being".
 
             Use respectful, strengths-based, plain-language writing.
             Avoid academic jargon, corporate buzzwords, or generic claims.
@@ -296,6 +358,10 @@ def _build_payload(
             into completed claims. It is acceptable to answer "N/A" when the user has explicitly
             provided N/A for a field.
 
+            Quote numbers exactly as the applicant gave them. Do not calculate new numbers
+            (for example, do not turn "months 4-24" into "21 months"); answers with numbers that
+            are not in the inputs are rejected.
+
             Ground all writing strictly in the provided information.
             Do NOT invent facts, partners, legal status, timelines, funding amounts,
             or commitments that were not explicitly provided.
@@ -314,11 +380,8 @@ def _build_payload(
             - explain expected change,
             - and support outcomes in a realistic, defensible way.
 
-            Add practical implementation detail where appropriate, including:
-            - phased activities (e.g., planning → implementation → evaluation),
-            - who is responsible for what,
-            - how community engagement will occur,
-            - and key risks with reasonable mitigation approaches.
+            Include implementation detail (phases, who is responsible, how engagement will
+            occur, risks and mitigation) only where the applicant provided it.
 
             Follow standard Canadian grant application norms:
             - clearly distinguish needs, activities, outputs, and outcomes,
@@ -607,6 +670,15 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
         ]
         answer = "; ".join(detail for detail in contact_details if detail)
         return answer or "[Missing information needed]"
+    if re.search(r"\b(engag\w*|consult\w*)\b", prompt_text) and community_engagement:
+        return community_engagement
+    if re.search(r"\b(activity|activities|work plan|workplan)\b", prompt_text) and project_activities:
+        parts = [project_activities]
+        if staffing_plan and re.search(r"\b(roles?|responsib\w*|staff\w*|team|who)\b", prompt_text):
+            parts.append(staffing_plan)
+        if timeline and re.search(r"\b(timeline|schedule|timeframe|milestones?|when)\b", prompt_text):
+            parts.append(f"Timeline: {timeline}")
+        return " ".join(parts)
     if re.search(r"\b(routing|stream|intake|high-level assessment|high level assessment|assessment)\b", prompt_text):
         parts = [
             value
@@ -644,7 +716,11 @@ def _prompt_answer_from_context(prompt_item: Dict[str, Any], profile: Dict[str, 
     if re.search(r"\b(who defined|who requested|who shaped|community-defined|community defined)\b", prompt_text):
         parts = [value for value in [community_engagement, governance_context, community_support_status] if value]
         return " ".join(parts) if parts else "[Missing information needed]"
-    if re.search(r"\b(how benefits|benefits shared|shared benefit|who will benefit)\b", prompt_text):
+    if re.search(r"\b(who will benefit|who benefits)\b", prompt_text):
+        # Only beneficiary fields answer "who"; outcomes and priorities read as unrelated fragments here.
+        parts = [value for value in [target_beneficiaries, direct_beneficiaries, indirect_beneficiaries] if value]
+        return " ".join(parts) if parts else "[Missing information needed]"
+    if re.search(r"\b(how benefits|benefits shared|shared benefit)\b", prompt_text):
         parts = [value for value in [target_beneficiaries, direct_beneficiaries, expected_outcomes, local_priority] if value]
         return " ".join(parts) if parts else "[Missing information needed]"
     if re.search(r"\b(duration|timeline|schedule|timeframe|milestone|milestones)\b", prompt_text) and timeline:
@@ -1381,6 +1457,17 @@ def _build_prompt_coverage_map(
     return coverage
 
 
+def _apply_answer_reviews(items: List[Dict[str, Any]], reviews: Dict[str, Dict[str, str]]) -> None:
+    """Flag answers whose question asks for more than the applicant provided."""
+    for item in items:
+        review = reviews.get(str(item.get("prompt_id") or ""))
+        if not review or item.get("status") == "missing" or str(item.get("response_value") or "").strip():
+            continue
+        item["confidence"] = review["confidence"]
+        item["review_note"] = review["review_note"]
+        item["status"] = "needs_review"
+
+
 def enhance_sections_with_metadata(
     draft: Dict[str, Any],
     requirements: Dict[str, Any] | None = None,
@@ -1453,6 +1540,21 @@ def enhance_sections_with_metadata(
         structured=structured_enhanced,
         requirements=requirements,
     )
+    prompt_coverage = _build_prompt_coverage_map(
+        sections=sections,
+        enhanced=structured_enhanced,
+        requirements=requirements,
+    )
+    reviews = meta.pop("answer_reviews", None) or {}
+    _apply_answer_reviews(
+        [answer for section in structured_answers.values() for answer in section.get("answers", [])],
+        reviews,
+    )
+    _apply_answer_reviews(
+        [prompt for section in prompt_coverage.values() for prompt in section.get("prompts", [])],
+        reviews,
+    )
+    meta["fact_check_gap_count"] = len(reviews)
     meta["enhanced_section_count"] = len(narrative_enhanced)
     meta["structured_answer_section_count"] = len(structured_enhanced)
     meta["structured_answer_count"] = sum(
@@ -1462,11 +1564,7 @@ def enhance_sections_with_metadata(
     return {
         "enhanced": narrative_enhanced,
         "structured_answers": structured_answers,
-        "prompt_coverage": _build_prompt_coverage_map(
-            sections=sections,
-            enhanced=structured_enhanced,
-            requirements=requirements,
-        ),
+        "prompt_coverage": prompt_coverage,
         "meta": meta,
     }
 
@@ -1518,6 +1616,397 @@ def _retrieve_rag_references(
             }
         )
     return refs
+
+
+_FACT_CHECK_SYSTEM = """You are a senior Canadian grant writer and a strict fact-checker. You receive the applicant's own
+inputs (source_facts, keyed by field name) and draft answers, each with an id, the question it answers, and the draft
+text. For every draft, write the final answer as a list of sentences, and give each sentence "sources": the
+source_facts keys whose content backs every claim in it.
+
+LENGTH - aim for balance:
+- Narrative questions (need, activities, outcomes, engagement, sustainability, risks, budget rationale, etc.):
+  one solid paragraph of about 4-6 sentences (roughly 60-110 words), even when the inputs are brief.
+- When the inputs for a question are detailed, use up to two paragraphs (about 200 words) to carry those details.
+- Sections without a question ("text" drafts): one to two paragraphs.
+- Short factual questions (names, contact details, amounts, dates, registration numbers): one sentence.
+- Build length from substance: state the applicant's answer; add related facts from other source fields
+  (community context, priorities, challenges, partners, beneficiaries, activities, timeline, budget, supporting
+  documents); and explain how those facts answer the question. Never repeat a fact within one answer to reach a length.
+- Each answer is read on its own by the funder. Reusing the same facts in several answers is expected and fine; do
+  not hold facts back from one answer because another answer already uses them.
+- Brief inputs are the normal case, not an excuse for a one-line answer. A narrative answer under about 50 words is
+  almost always too short: nearly every question can honestly be linked to the community, the challenge, the
+  activities, the beneficiaries, the partners and the timeline. Write fewer than 4 sentences only when that would
+  truly require repeating or inventing.
+- Worked example. Sources: expected_outcomes "More youth taking part in sport"; challenges "Youth have little to do
+  after school"; project_activities "Hire a coordinator and run weekly sessions at the arena"; target_beneficiaries
+  "Youth in the community"; timeline "One year"; community_name "Chesterfield Inlet". Question: "What outcomes do you
+  expect and how will you measure them?" Good answer (5 sentences, all cited):
+  "The main outcome the Hamlet expects is more youth in Chesterfield Inlet taking part in sport. [expected_outcomes,
+  community_name] Today, youth in the community have little to do after school, so a regular, organized option is the
+  change the project is built around. [challenges, expected_outcomes] A coordinator will run weekly sessions at the
+  arena, giving youth a consistent time and place to play. [project_activities] Because the sessions continue weekly
+  for the full year, the outcome is steady participation rather than a one-time event. [project_activities, timeline]
+  The program is open to youth across the community. [target_beneficiaries]"
+  Gap note: "Add how participation will be measured, for example attendance counts."
+
+ACCURACY - every sentence must be backed by the fields you cite:
+- Faithful paraphrase, quoting figures and names from a field, and a sentence that links cited facts to the question
+  are supported (e.g. "Running sessions after school responds to the lack of after-school options" cites
+  project_activities and challenges).
+- NOT supported: evidence or survey results not in a field; what people said, asked for, wanted or "highlighted" beyond
+  the field; measurement methods, tracking, attendance, records, feedback collection; outcomes or benefits beyond those
+  stated (health, well-being, social skills, healthier lifestyles, disengagement); consequences or speculation ("can
+  lead to"); details about who, where or how many beyond the field (naming a school when the field only says "youth");
+  roles, phases or commitments not stated; numbers not in the sources or calculated from them; effects of past actions
+  ("their input was crucial", "ensured the program meets their needs", "reflecting their interest in more organized
+  activities", "where the desire for more activities was identified"); narrowing or widening a group ("particularly
+  those connected to <partner>"); program features not stated ("skill development", "mentorship" when the field only
+  says sessions); evaluative filler ("pressing need",
+  "significant portion", "as many as possible", "long-term vision", "positive impact").
+- Claims about what an action achieved, ensured or shaped are NOT supported unless a field says so: "by talking to youth
+  the Hamlet ensured the program is relevant", "this engagement helped shape the project's focus", "was able to
+  identify the need", "ensuring community perspectives were incorporated", "ensuring broad participation/access",
+  "to ensure accountability".
+- Characterizations of the applicant or the need are NOT supported: "demonstrates the Hamlet's commitment", "is
+  committed to", "underscoring the urgency", "a clear need", "strong demand", "creates a positive and engaging
+  environment", "further benefiting the community", "leveraging partnerships".
+- Do not merge two fields into a new claim: "we talked to youth" plus "youth have little to do" does not support
+  "youth told us they have little to do".
+- Good connecting sentences describe how stated facts fit together ("Weekly sessions over the full year give youth a
+  regular after-school option, which is what the community lacks today"). They do not claim results, motives or quality.
+- If a sentence has no supporting field, do not write it.
+
+GAPS - for every question, split it into its parts (e.g. "what outcomes" and "how will you measure them"; "the need"
+and "the evidence for it"; "who" and "how many"). A part is answered when any source field covers it, even if the
+draft did not use that field. In gaps, write one short note to the applicant naming each unanswered part (e.g. "Add how
+many youth are expected to take part. Add how outcomes will be measured."). Gaps are only about information the
+applicant still needs to provide, never about the draft's wording. Leave a question out of gaps when nothing is missing.
+
+Return JSON only:
+{"drafts":[{"id":"<draft id>","sentences":[{"text":"...","sources":["field"],"new_paragraph":false}]}],
+"gaps":{"<prompt_id>":"<note>"}}
+Set "new_paragraph": true on the first sentence of a second paragraph."""
+
+_MIN_NARRATIVE_WORDS = 45
+
+_STRICT_CHECK_SYSTEM = """You check sentences in grant answers against the applicant's inputs (source_facts).
+For each sentence id, answer keep=true only if every claim in it is stated in source_facts or is a plain description of
+how stated facts fit together. Answer keep=false if the sentence claims something the inputs do not state, including:
+what an action achieved, ensured, confirmed or shaped ("this engagement ensured the program is relevant", "helped shape
+the focus", "helped confirm", "was able to gather input from"); motives or character ("demonstrates commitment", "is
+committed to", "reflects the Hamlet's commitment"); quality or impact ("positive", "engaging environment", "ensures
+ongoing engagement", "build local capacity", "important because"); feedback, interest or desires not in the inputs;
+or speculation ("may also support"). Give a verdict for every sentence id you receive, in order.
+Return JSON only: {"verdicts":[{"id":"<id>","keep":true}]}"""
+
+
+def _strict_sentence_verdicts(
+    client: Any,
+    source: Dict[str, Any],
+    items: Dict[str, Dict[str, Any]],
+) -> Dict[str, bool]:
+    """Label-only second look at expanded answers; returns sentence id -> keep. Empty on failure (keep all)."""
+    sentences = []
+    for draft_id, item in items.items():
+        for index, sentence in enumerate(item.get("sentences") or []):
+            if isinstance(sentence, dict) and str(sentence.get("text") or "").strip():
+                sentences.append({"id": f"{draft_id}.{index}", "text": sentence["text"]})
+    if not sentences:
+        return {}
+    wanted = {sentence["id"] for sentence in sentences}
+    request = json.dumps(
+        {
+            "instruction": f"Return exactly {len(sentences)} verdicts, one for every sentence id below.",
+            "source_facts": source,
+            "sentences": sentences,
+        },
+        ensure_ascii=False,
+    )
+    result: Dict[str, bool] = {}
+    for _ in range(2):  # the model sometimes answers only part of the list
+        try:
+            resp = client.chat.completions.create(
+                model=FACT_CHECK_MODEL,
+                messages=[
+                    {"role": "system", "content": _STRICT_CHECK_SYSTEM},
+                    {"role": "user", "content": request},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0,
+                max_tokens=3000,
+            )
+            verdicts = json.loads(resp.choices[0].message.content or "{}").get("verdicts") or []
+        except Exception as exc:
+            logger.warning("Strict sentence check failed: %s", exc)
+            continue
+        for item in verdicts:
+            if isinstance(item, dict) and str(item.get("id") or "") in wanted:
+                result.setdefault(str(item["id"]), bool(item.get("keep", True)))
+        if wanted <= set(result):
+            break
+    return result
+
+
+def _fact_check_source(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Flat map of field name -> applicant input, so the checker cites fields by name."""
+    profile = payload.get("community_profile") or {}
+    source: Dict[str, Any] = {
+        key: value
+        for key, value in profile.items()
+        if value not in (None, "", {}, [])
+    }
+    if payload.get("grant_name"):
+        source["grant_name"] = payload["grant_name"]
+    if payload.get("verified_budget_calculations"):
+        source["verified_budget_calculations"] = payload["verified_budget_calculations"]
+    if payload.get("requirements_text_snippet"):
+        source["grant_text_snippet"] = payload["requirements_text_snippet"][:3000]
+    return source
+
+
+def _fact_check_sections(
+    client: Any,
+    payload: Dict[str, Any],
+    data: Dict[str, Any],
+    trace_meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Final grounded pass: rewrite each draft at a balanced length with a cited source per sentence.
+
+    The model writes the final answers and labels each sentence with the profile fields that back it;
+    the code keeps a sentence only when it cites a real field. Gap notes are recorded in
+    ``trace_meta["answer_reviews"]`` keyed by prompt id. Any failure returns the drafts unchanged so
+    generation still completes.
+    """
+    sections = [section for section in data.get("sections") or [] if isinstance(section, dict)]
+    if not sections:
+        return data
+    try:
+        questions = {
+            str(item.get("prompt_id") or ""): str(item.get("prompt_text") or "")
+            for section in payload.get("sections_to_improve") or []
+            for item in section.get("prompt_items") or []
+        }
+        guidance = {
+            str(section.get("key") or ""): str(section.get("guidance_from_application") or section.get("title") or "")
+            for section in payload.get("sections_to_improve") or []
+        }
+        has_prompts = {
+            str(section.get("key") or ""): bool(section.get("prompt_items"))
+            for section in payload.get("sections_to_improve") or []
+        }
+        slots: Dict[str, tuple] = {}
+        drafts = []
+        for section_index, section in enumerate(sections):
+            key = str(section.get("key") or "")
+            # Sections with prompt_items are rendered from their answers; their free text is never shown.
+            if not has_prompts.get(key) and isinstance(section.get("text"), str) and section["text"].strip():
+                draft_id = f"d{len(slots) + 1}"
+                slots[draft_id] = (section_index, "text")
+                drafts.append({"id": draft_id, "question": guidance.get(key, ""), "draft": section["text"]})
+            for answer_index, answer in enumerate(section.get("answers") or []):
+                if not isinstance(answer, dict) or _is_missing_answer(str(answer.get("answer") or "")):
+                    continue
+                draft_id = f"d{len(slots) + 1}"
+                slots[draft_id] = (section_index, answer_index)
+                prompt_id = str(answer.get("prompt_id") or "")
+                drafts.append(
+                    {
+                        "id": draft_id,
+                        "prompt_id": prompt_id,
+                        "question": questions.get(prompt_id, ""),
+                        "draft": str(answer.get("answer") or ""),
+                    }
+                )
+        if not slots:
+            return data
+
+        source = _fact_check_source(payload)
+        valid_sources = set(source)
+
+        def run_check(batch: List[Dict[str, Any]], note: str = "") -> Dict[str, Any]:
+            request: Dict[str, Any] = {"source_facts": source, "drafts": batch}
+            if note:
+                request["instruction"] = note
+            resp = client.chat.completions.create(
+                model=FACT_CHECK_MODEL,
+                messages=[
+                    {"role": "system", "content": _FACT_CHECK_SYSTEM},
+                    {"role": "user", "content": json.dumps(request, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                max_tokens=8000,
+            )
+            return json.loads(resp.choices[0].message.content or "{}")
+
+        checked = run_check(drafts)
+        results = {
+            str(item.get("id") or ""): item
+            for item in checked.get("drafts") or []
+            if isinstance(item, dict)
+        }
+        if not results:
+            raise ValueError("fact-check returned no drafts")
+
+        dropped = 0
+
+        def final_text(draft_id: str, paragraph_sep: str) -> Optional[str]:
+            nonlocal dropped
+            result = results.get(draft_id)
+            if result is None or not isinstance(result.get("sentences"), list):
+                return None  # not returned: keep the draft
+            paragraphs: List[List[str]] = [[]]
+            for item in result["sentences"]:
+                if not isinstance(item, dict):
+                    continue
+                text = str(item.get("text") or "").strip()
+                if not text:
+                    continue
+                if not {str(value) for value in item.get("sources") or []} & valid_sources:
+                    dropped += 1
+                    continue
+                if item.get("new_paragraph") and paragraphs[-1]:
+                    paragraphs.append([])
+                paragraphs[-1].append(text)
+            joined = paragraph_sep.join(" ".join(paragraph) for paragraph in paragraphs if paragraph)
+            return joined or "[Missing information needed]"
+
+        # Narrative answers that came back under a paragraph get one targeted expansion pass.
+        short = []
+        for draft in drafts:
+            if not draft.get("prompt_id") or _is_factual_prompt_label(draft.get("question", "")):
+                continue
+            text = final_text(draft["id"], " ")
+            if text and not _is_missing_answer(text) and len(text.split()) < _MIN_NARRATIVE_WORDS:
+                short.append({**draft, "draft": text})
+        if short:
+            try:
+                expanded = run_check(
+                    short,
+                    f"Each of these answers is under {_MIN_NARRATIVE_WORDS} words. Rewrite each as one paragraph of "
+                    "4-6 sentences (60-110 words) following the worked example: keep its facts, then link them to "
+                    "related source fields (community, challenge, activities, beneficiaries, partners, timeline) and "
+                    "explain how they answer the question. All accuracy rules still apply; never invent to reach length.",
+                )
+                expanded_items = {
+                    str(item.get("id") or ""): item
+                    for item in expanded.get("drafts") or []
+                    if isinstance(item, dict) and str(item.get("id") or "") in results
+                }
+                verdicts = _strict_sentence_verdicts(client, source, expanded_items)
+                for draft_id, item in expanded_items.items():
+                    sentences = item.get("sentences") if isinstance(item.get("sentences"), list) else []
+                    kept = [
+                        sentence
+                        for index, sentence in enumerate(sentences)
+                        if verdicts.get(f"{draft_id}.{index}", True)
+                    ]
+                    results[draft_id] = {**item, "sentences": kept}
+                if trace_meta is not None:
+                    trace_meta["fact_check_expanded_answers"] = len(short)
+            except Exception as exc:
+                logger.warning("Expansion pass for short answers failed: %s", exc)
+
+        dropped = 0  # count only the sentences dropped from the final answers
+        merged_sections = [dict(section) for section in sections]
+        for section in merged_sections:
+            if isinstance(section.get("answers"), list):
+                section["answers"] = [dict(answer) if isinstance(answer, dict) else answer for answer in section["answers"]]
+        unchecked = 0
+        for draft_id, (section_index, slot) in slots.items():
+            # A blank line inside a prompt answer would split its answer block downstream.
+            text = final_text(draft_id, "\n\n" if slot == "text" else "\n")
+            if text is None:
+                unchecked += 1
+                continue
+            if slot == "text":
+                merged_sections[section_index]["text"] = text
+            else:
+                merged_sections[section_index]["answers"][slot]["answer"] = text
+
+        gaps = checked.get("gaps") if isinstance(checked.get("gaps"), dict) else {}
+        reviews = {
+            str(prompt_id): {"confidence": "low", "review_note": str(note).strip()}
+            for prompt_id, note in gaps.items()
+            if str(note or "").strip()
+            and not re.match(r"(?i)\W*(no gaps?|none|n/?a|nothing (is )?missing|remove|delete)\b", str(note).strip())
+        }
+    except Exception as exc:
+        logger.warning("Fact-check pass failed; keeping unchecked drafts: %s", exc)
+        if trace_meta is not None:
+            trace_meta["fact_check_error"] = f"{type(exc).__name__}: {exc}"
+        return data
+
+    if trace_meta is not None:
+        trace_meta["fact_check_used"] = True
+        trace_meta["fact_check_dropped_sentences"] = dropped
+        trace_meta["fact_check_unchecked_drafts"] = unchecked
+        trace_meta["answer_reviews"] = reviews
+    return {**data, "sections": merged_sections}
+
+
+def _section_has_content(section: Dict[str, Any], expects_answers: bool) -> bool:
+    """A section with prompt_items needs per-prompt answers; free text alone cannot be split into them."""
+    if any(
+        isinstance(answer, dict) and str(answer.get("answer") or "").strip()
+        for answer in section.get("answers") or []
+    ):
+        return True
+    return not expects_answers and bool(str(section.get("text") or "").strip())
+
+
+def _fill_missing_sections(
+    client: Any,
+    system_msg: str,
+    payload: Dict[str, Any],
+    data: Dict[str, Any],
+    trace_meta: Optional[Dict[str, Any]] = None,
+    attempts: int = 2,
+) -> Dict[str, Any]:
+    """Request again any section the model left out, so it never falls back to the raw baseline draft."""
+    returned = [section for section in data.get("sections") or [] if isinstance(section, dict)]
+    for _ in range(attempts):
+        expects_answers = {
+            str(section.get("key") or ""): bool(section.get("prompt_items"))
+            for section in payload.get("sections_to_improve") or []
+        }
+        done = {
+            str(section.get("key") or "")
+            for section in returned
+            if _section_has_content(section, expects_answers.get(str(section.get("key") or ""), False))
+        }
+        missing = [
+            section
+            for section in payload.get("sections_to_improve") or []
+            if str(section.get("key") or "") not in done
+        ]
+        if not missing:
+            break
+        if trace_meta is not None:
+            trace_meta["missing_section_retries"] = trace_meta.get("missing_section_retries", 0) + 1
+        try:
+            resp = client.chat.completions.create(
+                model=CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": json.dumps({**payload, "sections_to_improve": missing}, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            extra = json.loads(resp.choices[0].message.content or "{}").get("sections") or []
+        except Exception as exc:
+            logger.warning("Retry for missing sections failed: %s", exc)
+            break
+        missing_keys = {str(section.get("key") or "") for section in missing}
+        returned = [
+            section for section in returned if str(section.get("key") or "") not in missing_keys
+        ] + [
+            section for section in extra
+            if isinstance(section, dict) and str(section.get("key") or "") in missing_keys
+        ]
+    return {**data, "sections": returned}
 
 
 def enhance_sections(
@@ -1596,7 +2085,8 @@ def enhance_sections(
 
     system_msg = (
         """You are a senior Canadian grant writer with 10+ years of experience writing successful federal, provincial, and Indigenous community infrastructure and CED grant applications.
-        You write in clear, professional, funder-facing language. Your output should be ready for submission with minimal editing. Write with concrete implementation detail.
+        You write in clear, professional, funder-facing language. Your output should be ready for submission with minimal editing.
+        Use only the details the applicant provided. When their answers are brief, write one well-built paragraph per answer by connecting their facts to related profile context and to the question; never add generic filler or invented detail.
         Follow the grant posting requirements and do not invent facts.
         When the user payload includes grant_library_excerpts, use them as reference material to inform phrasing and structure where relevant; do not copy verbatim."""
     )
@@ -1607,18 +2097,28 @@ def enhance_sections(
         from openai import OpenAI  # v1+
         client = OpenAI(api_key=api_key)
 
-        resp = client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-        )
-
-        content = resp.choices[0].message.content or "{}"
-        data = json.loads(content)
+        # The model occasionally runs away into repeated text and returns broken JSON; cap and retry once.
+        for attempt in range(2):
+            resp = client.chat.completions.create(
+                model=CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=8000,
+            )
+            content = resp.choices[0].message.content or "{}"
+            try:
+                data = json.loads(content)
+                break
+            except json.JSONDecodeError:
+                if attempt == 1:
+                    raise
+                logger.warning("Draft generation returned invalid JSON (%s chars); retrying", len(content))
+        data = _fill_missing_sections(client, system_msg, payload, data, trace_meta)
+        data = _fact_check_sections(client, payload, data, trace_meta)
 
     except Exception as e_v1:
         # --- Fallback for legacy openai<1.0 ---

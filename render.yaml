@@ -18,6 +18,8 @@ services:
         sync: false   # set in Render dashboard
       - key: OPENAI_CHAT_MODEL
         value: gpt-4o-mini
+      - key: OPENAI_FACT_CHECK_MODEL
+        value: gpt-4.1
       - key: EMBED_MODEL
         value: text-embedding-3-small
       - key: CORS_ORIGINS
