@@ -51,16 +51,20 @@ from backend.app.auth import user_from_authorization_header
 from backend.app.workspace_store import (
     create_feedback_report as store_create_feedback_report,
     create_proposal as store_create_proposal,
+    create_supporting_document as store_create_supporting_document,
     delete_feedback_report as store_delete_feedback_report,
     delete_proposal as store_delete_proposal,
+    delete_supporting_document as store_delete_supporting_document,
     duplicate_proposal as store_duplicate_proposal,
     get_or_create_user,
     get_community_profile as store_get_community_profile,
     get_feedback_report as store_get_feedback_report,
     get_proposal as store_get_proposal,
+    get_supporting_document as store_get_supporting_document,
     init_workspace_store,
     list_proposals as store_list_proposals,
     list_feedback_reports as store_list_feedback_reports,
+    list_supporting_documents as store_list_supporting_documents,
     mark_proposal_exported,
     update_proposal as store_update_proposal,
     upsert_community_profile as store_upsert_community_profile,
@@ -324,6 +328,25 @@ class FeedbackReportListResponse(BaseModel):
     reports: List[FeedbackReportRecord]
 
 
+class SupportingDocumentRequest(BaseModel):
+    filename: str
+    raw_text: str
+    char_count: Optional[int] = None
+
+
+class SupportingDocumentRecord(BaseModel):
+    id: str
+    user_id: str
+    filename: str
+    char_count: int
+    preview: str = ""
+    raw_text: Optional[str] = None
+    created_at: str
+
+
+class SupportingDocumentListResponse(BaseModel):
+    documents: List[SupportingDocumentRecord]
+
 def _feedback_report_payload(
     analysis: ProposalAnalysisResponse,
     *,
@@ -472,54 +495,78 @@ def _render_pdf(body: ExportDraftPdfRequest) -> bytes:
         if y - (lines * line_h) < bottom:
             new_page()
 
-    def draw_line(text: str, *, font: str = "Helvetica", size: int = 11, extra_gap: float = 0.0) -> None:
-        nonlocal y
-        ensure_room(1)
-        c.setFont(font, size)
-        c.drawString(left, y, text)
-        y -= line_h + extra_gap
+    def line_height(size: float) -> float:
+        return max(line_h, size * 1.25)
 
-    def wrap_text(text: str, size: int = 11) -> List[str]:
+    def wrap_text(text: str, size: float = 11, font: str = "Helvetica") -> List[str]:
+        """Wrap text to the printable width, measuring with the font actually drawn.
+
+        Tokens wider than a full line (URLs, long identifiers) are split by character
+        so nothing runs past the right margin.
+        """
         from reportlab.pdfbase.pdfmetrics import stringWidth
 
         max_w = right - left
-        words = (text or "").split()
+
+        def fits(value: str) -> bool:
+            return stringWidth(value, font, size) <= max_w
+
+        def split_long(word: str) -> List[str]:
+            pieces: List[str] = []
+            cur = ""
+            for ch in word:
+                if cur and not fits(cur + ch):
+                    pieces.append(cur)
+                    cur = ch
+                else:
+                    cur += ch
+            if cur:
+                pieces.append(cur)
+            return pieces
+
+        words = (text or "").replace("\t", " ").split()
         if not words:
             return [""]
 
         lines: List[str] = []
-        cur = words[0]
-        for w in words[1:]:
-            candidate = f"{cur} {w}"
-            if stringWidth(candidate, "Helvetica", size) <= max_w:
+        cur = ""
+        for w in words:
+            candidate = f"{cur} {w}" if cur else w
+            if fits(candidate):
                 cur = candidate
-            else:
+                continue
+            if cur:
                 lines.append(cur)
+            if fits(w):
                 cur = w
-        lines.append(cur)
+            else:
+                *full, cur = split_long(w)
+                lines.extend(full)
+        if cur:
+            lines.append(cur)
         return lines
 
-    def draw_paragraph(text: str, *, size: int = 11, gap: float = 4.0) -> None:
+    def draw_line(text: str, *, font: str = "Helvetica", size: float = 11, extra_gap: float = 0.0) -> None:
+        nonlocal y
+        lh = line_height(size)
+        for ln in wrap_text(text, size=size, font=font):
+            ensure_room(1)
+            c.setFont(font, size)
+            c.drawString(left, y, ln)
+            y -= lh
+        y -= extra_gap
+
+    def draw_paragraph(text: str, *, size: float = 11, gap: float = 4.0) -> None:
         nonlocal y
         chunks = [p.strip() for p in (text or "").replace("\r\n", "\n").split("\n")]
         for chunk in chunks:
-            lines = wrap_text(chunk, size=size)
-            for ln in lines:
-                ensure_room(1)
-                c.setFont("Helvetica", size)
-                c.drawString(left, y, ln)
-                y -= line_h
+            draw_line(chunk, font="Helvetica", size=size)
             y -= gap
 
     def draw_subheading(text: str) -> None:
         nonlocal y
         y -= 2
-        for ln in wrap_text(text, size=11):
-            ensure_room(1)
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(left, y, ln)
-            y -= line_h
-        y -= 1
+        draw_line(text, font="Helvetica-Bold", size=11, extra_gap=1)
 
     # Cover header
     draw_line("Grant Proposal", font="Helvetica-Bold", size=22, extra_gap=8)
@@ -826,6 +873,38 @@ def delete_saved_feedback_report(report_id: str, user: Dict[str, Any] = Depends(
         raise HTTPException(status_code=404, detail="Feedback report not found.")
     return {"deleted": True}
 
+
+@app.get("/api/supporting-documents", response_model=SupportingDocumentListResponse)
+def list_saved_supporting_documents(user: Dict[str, Any] = Depends(current_user)):
+    return {"documents": store_list_supporting_documents(user["id"])}
+
+
+@app.post("/api/supporting-documents", response_model=SupportingDocumentRecord)
+def create_saved_supporting_document(body: SupportingDocumentRequest, user: Dict[str, Any] = Depends(current_user)):
+    filename = body.filename.strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename is required.")
+    raw_text = body.raw_text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Document text is required.")
+    char_count = body.char_count if body.char_count is not None else len(raw_text)
+    return store_create_supporting_document(user["id"], filename, raw_text, char_count)
+
+
+@app.get("/api/supporting-documents/{document_id}", response_model=SupportingDocumentRecord)
+def get_saved_supporting_document(document_id: str, user: Dict[str, Any] = Depends(current_user)):
+    document = store_get_supporting_document(user["id"], document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Supporting document not found.")
+    return document
+
+
+@app.delete("/api/supporting-documents/{document_id}")
+def delete_saved_supporting_document(document_id: str, user: Dict[str, Any] = Depends(current_user)):
+    deleted = store_delete_supporting_document(user["id"], document_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Supporting document not found.")
+    return {"deleted": True}
 
 def get_compliance_service() -> ComplianceEvaluationService:
     service = getattr(app.state, "compliance_service", None)

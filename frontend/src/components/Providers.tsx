@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Session, User } from "@supabase/supabase-js";
 import { clearLocalBypass, enableLocalBypass, isLocalBypassEnabled, localBypassUser } from "@/lib/localAuth";
 import { supabase } from "@/lib/supabase";
+import { ToastProvider } from "@/components/ui/toast";
 
 type AuthContextValue = {
   session: Session | null;
@@ -122,7 +123,9 @@ const queryClient = new QueryClient({
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthGuard>{children}</AuthGuard>
+      <ToastProvider>
+        <AuthGuard>{children}</AuthGuard>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

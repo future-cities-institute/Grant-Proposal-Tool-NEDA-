@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowRight, BookOpen, CheckCircle2, FileQuestion, ListChecks, Users } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { SupportingDocumentsLibrary } from "@/components/SupportingDocumentsLibrary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -79,6 +80,8 @@ export default function ResourcesPage() {
             );
           })}
         </div>
+
+        <SupportingDocumentsLibrary />
 
         <Card className="border-primary/25 bg-primary/5">
           <CardHeader>

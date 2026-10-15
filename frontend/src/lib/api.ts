@@ -717,6 +717,67 @@ export async function parseSupportingDocument(file: File): Promise<{
   return res.json();
 }
 
+export type SupportingDocument = {
+  id: string;
+  user_id: string;
+  filename: string;
+  char_count: number;
+  preview: string;
+  raw_text?: string | null;
+  created_at: string;
+};
+
+export async function listSupportingDocuments(): Promise<SupportingDocument[]> {
+  const res = await fetch(`${API_BASE}/api/supporting-documents`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load supporting documents");
+  }
+  const data = await res.json();
+  return data.documents || [];
+}
+
+export async function saveSupportingDocument(params: {
+  filename: string;
+  raw_text: string;
+  char_count?: number;
+}): Promise<SupportingDocument> {
+  const res = await fetch(`${API_BASE}/api/supporting-documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to save supporting document");
+  }
+  return res.json();
+}
+
+export async function getSupportingDocument(documentId: string): Promise<SupportingDocument> {
+  const res = await fetch(`${API_BASE}/api/supporting-documents/${documentId}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to load supporting document");
+  }
+  return res.json();
+}
+
+export async function deleteSupportingDocument(documentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/supporting-documents/${documentId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to delete supporting document");
+  }
+}
+
 export async function generateDraft(
   profile: CommunityProfile,
   requirements: Requirements,

@@ -179,6 +179,24 @@ def init_workspace_store() -> None:
             conn,
             "CREATE INDEX IF NOT EXISTS idx_feedback_reports_source ON proposal_feedback_reports(user_id, source_proposal_id, analyzed_at DESC)",
         )
+        _run(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS supporting_documents (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                raw_text TEXT NOT NULL,
+                char_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """,
+        )
+        _run(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_supporting_documents_user_created ON supporting_documents(user_id, created_at DESC)",
+        )
 
 
 def _ensure_column(conn: Any, table: str, column: str, definition: str) -> None:
@@ -505,6 +523,67 @@ def delete_feedback_report(user_id: str, report_id: str) -> bool:
         )
     return cur.rowcount > 0
 
+
+def create_supporting_document(user_id: str, filename: str, raw_text: str, char_count: int) -> dict[str, Any]:
+    init_workspace_store()
+    doc_id = str(uuid4())
+    now = _now()
+    with _connect() as conn:
+        _run(
+            conn,
+            "INSERT INTO supporting_documents (id, user_id, filename, raw_text, char_count, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, user_id, filename, raw_text, char_count, now),
+        )
+        row = _run(conn, "SELECT * FROM supporting_documents WHERE id = ?", (doc_id,)).fetchone()
+    return _row_to_supporting_document(row, include_text=True)
+
+
+def list_supporting_documents(user_id: str) -> list[dict[str, Any]]:
+    init_workspace_store()
+    with _connect() as conn:
+        rows = _run(
+            conn,
+            "SELECT * FROM supporting_documents WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [_row_to_supporting_document(row, include_text=False) for row in rows]
+
+
+def get_supporting_document(user_id: str, document_id: str) -> dict[str, Any] | None:
+    init_workspace_store()
+    with _connect() as conn:
+        row = _run(
+            conn,
+            "SELECT * FROM supporting_documents WHERE id = ? AND user_id = ?",
+            (document_id, user_id),
+        ).fetchone()
+    return _row_to_supporting_document(row, include_text=True) if row else None
+
+
+def delete_supporting_document(user_id: str, document_id: str) -> bool:
+    init_workspace_store()
+    with _connect() as conn:
+        cur = _run(
+            conn,
+            "DELETE FROM supporting_documents WHERE id = ? AND user_id = ?",
+            (document_id, user_id),
+        )
+    return cur.rowcount > 0
+
+
+def _row_to_supporting_document(row: Any, *, include_text: bool) -> dict[str, Any]:
+    raw_text = row["raw_text"] or ""
+    record = {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "filename": row["filename"],
+        "char_count": row["char_count"],
+        "preview": raw_text[:240],
+        "created_at": row["created_at"],
+    }
+    if include_text:
+        record["raw_text"] = raw_text
+    return record
 
 def _row_to_user(row: Any) -> dict[str, Any]:
     if row is None:

@@ -10,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { parseSupportingDocument, type CommunityProfile } from "@/lib/api";
+import { parseSupportingDocument, saveSupportingDocument, type CommunityProfile } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ChevronDown, FileText, Loader2 } from "lucide-react";
 
 const requiredText = (label: string) => z.string().trim().min(1, `${label} is required`);
@@ -495,6 +497,8 @@ export function CommunityForm({
   saveStatus?: "idle" | "unsaved" | "saving" | "saved" | "error";
   communityProfileUpdatedAt?: string | null;
 }) {
+  const showToast = useToast();
+  const queryClient = useQueryClient();
   const [supportingDocNames, setSupportingDocNames] = useState<string[]>([]);
   const [supportingDocError, setSupportingDocError] = useState("");
   const [isParsingSupportingDocs, setIsParsingSupportingDocs] = useState(false);
@@ -687,8 +691,19 @@ export function CommunityForm({
         parsed.map((item) => `Source: ${item.filename}\n${item.raw_text}`).join("\n\n---\n\n"),
         { shouldDirty: true, shouldValidate: true }
       );
+      const saveResults = await Promise.allSettled(parsed.map((item) => saveSupportingDocument(item)));
+      const savedToLibrary = saveResults.every((result) => result.status === "fulfilled");
+      queryClient.invalidateQueries({ queryKey: ["supporting-documents"] });
+      showToast({
+        title: parsed.length === 1 ? "Upload successful" : `${parsed.length} documents uploaded`,
+        description: savedToLibrary
+          ? `${parsed.map((item) => item.filename).join(", ")} added. Manage uploads in Resources.`
+          : `${parsed.map((item) => item.filename).join(", ")} added to this proposal, but could not be saved to your document library.`,
+      });
     } catch (err) {
-      setSupportingDocError(err instanceof Error ? err.message : "Could not parse supporting document.");
+      const message = err instanceof Error ? err.message : "Could not parse supporting document.";
+      setSupportingDocError(message);
+      showToast({ title: "Upload failed", description: message, variant: "error" });
     } finally {
       setIsParsingSupportingDocs(false);
       event.target.value = "";

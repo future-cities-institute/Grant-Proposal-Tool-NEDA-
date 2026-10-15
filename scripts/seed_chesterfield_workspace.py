@@ -1,16 +1,28 @@
 """Seed the local workspace with Chesterfield Inlet (Igluligaarjuk) records.
 
-Facts are taken from the community CED plans in ``ced_plans copy/``:
-the 2013 Hamlet CED plan and the 2023 CED plan brochure.
+Sources (``ced_plans copy/Chesterfield Inlet/`` unless noted):
+
+- "Chesterfield Inlet 2023" Community Economic Development Plan: a five-year plan
+  developed in 2018 by Canadian Ecotourism Services (consultation May 2018). Used
+  in two forms: the Part 1 executive-summary brochure and the full plan.
+  "2023" is the plan's name, not the year it was written.
+- Hamlet of Chesterfield Inlet Community Economic Development Plan (2013).
+- Hamlet of Chesterfield Inlet Community Development Plan (December 2008).
+- Hamlet website, chesterfield-inlet.ca (municipal administration page): CEDO
+  contact, P.O. box, "est. 1980".
+- Government of Nunavut Chesterfield Inlet contact list (July 2025): local services.
+- Statistics Canada 2021 Census population count (397).
+
+Fields the sources do not support are left blank. The readiness review is not
+seeded: generate it with the app's analyzer (POST /api/proposals/<id>/feedback-report).
 """
 
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from backend.app.workspace_store import (
-    create_feedback_report,
     create_proposal,
     upsert_community_profile,
 )
@@ -29,7 +41,7 @@ REPORT_ID = "ci-edu-readiness"
 
 
 def section(key: str, title: str, body: str) -> dict:
-    return {"key": key, "title": title, "body": body.strip(), "guidance": ""}
+    return {"key": key, "title": title, "body": " ".join(body.split()), "guidance": ""}
 
 
 def requirements(grant_name: str, items: list[tuple[str, str, str]]) -> dict:
@@ -46,84 +58,92 @@ PROFILE = {
     "community_name": "Chesterfield Inlet",
     "region": "Kivalliq, Nunavut",
     "legal_name": "Hamlet of Chesterfield Inlet",
-    "operating_name": "Igluligaarjuk",
-    "applicant_type": "Indigenous municipal or local government",
-    "registration_number": "Hamlet of Chesterfield Inlet",
-    "year_established": "Hudson's Bay Company post established in 1911; the community marked its 100th anniversary in 2011-2012",
-    "website": "https://www.chesterfieldinlet.net",
+    "operating_name": "",
+    "applicant_type": "Municipal government (hamlet) in Nunavut",
+    "registration_number": "",
+    "year_established": "1980 (Municipality of Chesterfield Inlet, per the Hamlet website)",
+    "website": "https://chesterfield-inlet.ca",
     "contact_name": "David Kattegatsiak",
     "contact_title": "Community Economic Development Officer",
-    "contact_email": "",
-    "contact_phone": "867-898-9951",
-    "mailing_address": "Hamlet Office, Chesterfield Inlet, Nunavut X0C 0B0",
+    "contact_email": "edo_hamlet@qiniq.com",
+    "contact_phone": "867-898-4603",
+    "mailing_address": "P.O. Box 10, Chesterfield Inlet, Nunavut X0C 0B0",
     "applicant_profile": (
-        "The Hamlet of Chesterfield Inlet is the local government for Igluligaarjuk, on the west coast of Hudson Bay "
-        "in the Kivalliq region. The 2023 Community Economic Development Plan was prepared for the community and is "
-        "carried by the Community Economic Development Officer, Hamlet staff, Council, and local organizations. "
-        "Mayor Simionie Sammurtok introduced the 2023 plan. The Hamlet coordinates municipal services and uses the "
-        "CED plan to start projects that improve social and economic well-being."
+        "The Hamlet of Chesterfield Inlet is the municipal government for Igluligaarjuk, on the western shore of "
+        "Hudson Bay in the Kivalliq region. Its current five-year Community Economic Development plan, "
+        "\"Chesterfield Inlet 2023\", was developed in 2018 by Canadian Ecotourism Services under the direction of "
+        "CEDO David Kattegatsiak, with guidance from Hamlet Council, Mayor Simionie Sammurtok and the Senior "
+        "Administrative Officer. The Department of Economic Development and Transportation funded the plan. It "
+        "updates the Hamlet's earlier CED plans from 2013, 2008 and 2003."
     ),
     "indigenous_communities": "Chesterfield Inlet (Igluligaarjuk), an Inuit community in Nunavut",
     "population_served": (
-        "The 2013 CED plan describes Chesterfield Inlet as a community of about 400 people. The 2011 census counted "
-        "313 residents, 190 of them (60.3 percent) under the age of 24."
+        "397 residents in the 2021 Census (Statistics Canada), down from 437 in 2016. The Nunavut Bureau of "
+        "Statistics estimated 433 for 2023 (Government of Nunavut community contact list, 2025). The CED plan, "
+        "using 2016 census data, reports that 54.5 percent of residents were under 25 and the average age was 27."
     ),
     "demographic_context": (
-        "Igluligaarjuk means 'place with a few Thule houses.' Residents describe the community as the original Arctic "
-        "community, shaped by Inuit values, Inuktitut, and a year-round relationship with the land. The 2011 census "
-        "showed a young population, so education, youth recreation, and local jobs are central to the 2023 plan."
+        "Igluligaarjuk means 'place with few Thule houses'. The CED plan describes Chesterfield Inlet as the "
+        "oldest permanent settlement in Nunavut and the 'original' Arctic community. In the 2016 census, 94 percent "
+        "of residents were Inuit. Because the population is young, the plan asks for at least one youth-focused "
+        "project in each of its seven community directions."
     ),
     "existing_services": (
-        "Local services named in the 2013 CED plan include the Hamlet office and garage, Aqigiq Hunters and Trappers "
-        "Organization, Kajuqjuk Health Centre, Victor Sammurtok School, the Nunavut Arctic College Learning Centre, "
-        "Pairivik Daycare, Noel Nuvak Arena, the community drop-in centre, the Tangmavik / Inns North hotel, the "
-        "RCMP detachment, and the Chesterfield Inlet Housing Association."
+        "Services listed in the Government of Nunavut's 2025 community contact list include the Hamlet office, "
+        "Aqigiq Hunters and Trappers Organization (which handles Iqalukpik Fish Plant commercial fishing), the "
+        "health centre, RCMP, Victor Sammurtok School (K-12), Nunavut Arctic College, a daycare centre, the arena, "
+        "a community drop-in centre, the local radio station (93.3 FM), the Pitsiulak Co-operative and Northern "
+        "stores, and the Tangmavik Hotel (Inns North)."
     ),
     "service_gaps": (
-        "The 2023 plan names the cost of living and of doing business, housing, education quality, limited local "
-        "employment, mental health support, and recreation facilities as persistent pressures. Residents asked for "
-        "more training, a stronger youth voice, and more chances to practice traditional skills on the land."
+        "The CED plan names the quality of the education system, the high cost of living and of doing business, "
+        "and housing as key challenges. Residents asked for more employment, training, mental health support "
+        "and recreation facilities. Youth asked to have their concerns heard."
     ),
     "remoteness_context": (
-        "Chesterfield Inlet is about 1,600 km north of Winnipeg on the west coast of Hudson Bay. Shipping, air access, "
-        "and the high cost of construction shape what can be built and when. Longer-term infrastructure discussed in "
-        "the 2023 plan includes a road toward Rankin Inlet."
+        "Chesterfield Inlet is about 90 km north of Rankin Inlet and about 1,600 km north of Winnipeg. Scheduled "
+        "air service runs through Rankin Inlet. The CED plan supports the Government of Nunavut's work on a road "
+        "to Rankin Inlet and other Kivalliq communities, and the studies recommended for a deep-sea harbour."
     ),
     "governance_context": (
-        "The 2023 CED plan was ratified with the Mayor, Council, the Senior Administrative Officer, and the CEDO, "
-        "after surveys, school sessions, interviews, and a community open house. Implementation sits with the Hamlet "
-        "economic development function, with a recommended internal CED manager and a lead for each of the seven "
-        "community directions."
+        "The plan was developed through an online survey (including a youth survey), interviews, a presentation "
+        "at Victor Sammurtok School, a community open house, and a review of draft recommendations by the Mayor, "
+        "Council, the SAO and the CEDO. The full plan notes that it remains a draft until approved by the Hamlet. "
+        "Implementation sits with the Hamlet's economic development department. The plan recommends an internal "
+        "CED manager and a designated manager for each of its seven community directions."
     ),
     "local_priority": (
-        "The 2023 plan's top community directions are education, employment and training; heritage and culture; and "
-        "wellness and recreation. Seventy-one percent of survey respondents said employment is the most important "
-        "factor for socio-economic opportunity, and 67 percent said education and training have the highest potential "
-        "benefit."
+        "Residents named three sectors with the greatest potential benefit: education, employment and training; "
+        "heritage and culture; and wellness and recreation. In the community survey, 71 percent said providing "
+        "employment opportunities is the most important factor for creating socio-economic opportunity, and "
+        "67 percent said education and training have the highest potential to benefit the community."
     ),
     "strengths": (
-        "Residents named traditional knowledge and connection to the land as the community's greatest strength. "
-        "Country food is still shared, and people come together when someone is in need. Ninety-two percent of survey "
-        "respondents want the Hamlet to invest in traditional knowledge, skills, and language."
+        "Residents named traditional knowledge, based on a strong connection to the land, as the community's "
+        "greatest strength. Sharing country food continues, and people come together in times of need. In the "
+        "survey, 92 percent want the Hamlet to invest in preserving traditional knowledge, skills and language."
     ),
     "partners": (
-        "Hamlet of Chesterfield Inlet; Community Economic Development Officer; Aqigiq Hunters and Trappers Organization; "
-        "Victor Sammurtok School; Nunavut Arctic College; Kivalliq Inuit Association; Department of Fisheries and Oceans; "
-        "Department of Environment; and partner funders identified in the 2023 five-year CED budget."
+        "Partners named in the CED plan's action items include Aqigiq Hunters and Trappers Organization, Victor "
+        "Sammurtok School, Nunavut Arctic College, the Kivalliq Inuit Association, Fisheries and Oceans Canada, the "
+        "Department of Environment and the Government of Nunavut. The plan's budget assumes about 90 percent of "
+        "costs come from partners, but it does not name specific funders."
     ),
     "cultural_safety": (
-        "The 2023 plan is guided by Inuit Societal Values and Inuit Qaujimajatuqangit. Priorities came from residents, "
-        "including youth at Victor Sammurtok School and the Arctic College Learning Centre, and were confirmed with "
-        "community leadership before the plan was finalized."
+        "The plan is guided by Inuit Societal Values and Inuit Qaujimajatuqangit. Priorities came from residents, "
+        "including students at Victor Sammurtok School and the Arctic College Learning Centre. As a final step, "
+        "the recommendations were brought back to the community and confirmed."
     ),
     "data_governance": (
-        "Community survey findings in the 2023 plan are reported in aggregate. Project records should stay with the "
-        "Hamlet and be shared in summary form unless Council approves a more specific release."
+        "The full CED plan states that the document, including its financial information, is the property of "
+        "Chesterfield Inlet and is provided in confidence for uses the community authorizes. Survey results in "
+        "the plan are reported as aggregate percentages."
     ),
     "supporting_documents_text": (
-        "Source documents: Chesterfield Inlet 2023 Community Economic Development Plan brochure "
-        "(Chesterfield-Inlet-CED-Plan-Brochure-Digital.pdf); Hamlet of Chesterfield Inlet Community Economic "
-        "Development Plan (2013); Chesterfield Inlet Community Development Plan (December 2008)."
+        "Source documents: \"Chesterfield Inlet 2023\" Community Economic Development Plan (developed 2018 by "
+        "Canadian Ecotourism Services), both the Part 1 executive-summary brochure and the full plan; Hamlet of "
+        "Chesterfield Inlet Community Economic Development Plan (2013); Hamlet of Chesterfield Inlet Community "
+        "Development Plan (December 2008, Accutech Engineering)."
     ),
 }
 
@@ -143,7 +163,7 @@ def draft_for(profile: dict, grant_name: str, sections: list[dict], budget: int)
 def proposal(
     proposal_id: str,
     title: str,
-    grant_name: str,
+    direction: str,
     status: str,
     step: int,
     budget: int,
@@ -151,9 +171,9 @@ def proposal(
     summary: str,
     sections: list[dict],
     req_items: list[tuple[str, str, str]],
-    *,
-    exported: bool = False,
 ) -> dict:
+    # No funder has been chosen for any of these drafts, so the grant label says so.
+    grant_name = f"No funder selected · CED plan direction: {direction}"
     profile = {
         **PROFILE,
         "project_title": title,
@@ -161,7 +181,6 @@ def proposal(
         "project_summary": summary,
         "requested_budget": budget,
         "total_project_cost": total,
-        "local_priority": PROFILE["local_priority"],
     }
     payload = {
         "id": proposal_id,
@@ -183,9 +202,12 @@ def proposal(
         "draft": draft_for(PROFILE, grant_name, sections, budget),
         "final_sections": sections if status in {"ready_to_export", "exported"} else None,
     }
-    if exported:
+    if status == "exported":
         payload["last_exported_at"] = datetime.now(timezone.utc).isoformat()
     return payload
+
+
+PLAN = "the Chesterfield Inlet 2023 CED plan"
 
 
 def build_proposals() -> list[dict]:
@@ -193,43 +215,51 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Education, employment, and training are the first strategic priority in the Chesterfield Inlet 2023 CED plan.
-            In the community survey, 71 percent of respondents said employment opportunities are the most important factor
-            for socio-economic opportunity, and 67 percent said education and training have the highest potential to benefit
-            the community. The 2011 census counted 190 residents under 24, about 60 percent of the population at that time.
-            The plan's aim is a mixed economy: wage work and the traditional land-based economy, with less reliance on hiring from outside.
+            f"""
+            Education, employment and training is the first of the three strategic priorities residents named in {PLAN}.
+            In the plan's community survey, 71 percent said providing employment opportunities is the most important factor
+            for creating socio-economic opportunity, and 67 percent said education and training have the highest potential
+            to benefit the community. Using 2016 census data, the plan reports that 54.5 percent of residents were under 25.
+            The plan aims for a mixed economy of wage work and the traditional land-based economy, with less need to hire
+            from outside the community.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            The 2023 action plan for this direction is to expand and construct a new building for the Arctic College Learning Centre
-            so more courses can be offered in the community; support enrollment in the Inuit Learning and Development Project,
-            with a goal of two community members participating each year; support a Youth Council; help Victor Sammurtok School
-            students join learning exchanges outside the community; and offer tourism training and certifications in hospitality,
-            guiding, and business management. Year 1 of the implementation plan also calls for a guidance counsellor or additional
-            teacher at Victor Sammurtok School, and for training that prepares people for business development and employment.
+            The plan's key action items for this direction are to expand and construct a new building for the Arctic College
+            Learning Centre so more courses can be offered locally; promote enrolment in the Inuit Learning and Development
+            Project, with a goal of two community members per year; support the creation of a Youth Council; encourage Victor
+            Sammurtok School students to take part in experience exchanges and learning programs outside the community; and
+            offer tourism training courses and certifications, including hospitality, guiding and business management.
+            Year 1 of the implementation plan also includes hiring a guidance counsellor or additional teacher at Victor
+            Sammurtok School and laying the groundwork, through training, for more business development and employment.
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year budget for Education, Employment and Training is $223,200 in years 1-2, $100,000 in years 2-3,
-            and $200,000 in years 3-5, for $523,200. The same table assigns about $52,320 to Chesterfield Inlet and about
-            $470,880 to partners across those three phases. These figures are the plan's own budget, not a quote from a funder.
+            This direction totals $523,200 in the full plan's detailed 5-year budget (Part 2, p. 46): $223,200 short term (years 1-2), $100,000 medium term
+            (years 2-3) and $200,000 long term (years 3-5). The line items are a Learning Centre feasibility study
+            ($78,500), Youth Council set-up ($25,000), a guidance counsellor ($55,000), a PLAR assessment of local
+            training needs ($25,000), tourism training courses and certification ($100,000), a daycare facility
+            feasibility study ($64,700), a vocational training and equipment feasibility assessment ($100,000), and
+            support for community members to become registered nurses ($75,000). Building a new Learning Centre is
+            an action item, but the budget only funds the feasibility study. The plan projects $52,320 from Chesterfield
+            Inlet and $470,880 from partners. The requested funding in this draft is that partner share. These are the
+            plan's 2018 projections, not quotes or funder awards.
             """,
         ),
         section(
             "outcomes",
             "What success looks like",
             """
-            The plan's indicators include more employment in the community, stronger skills, and more education and professional
-            opportunities for youth. Specific early targets already written into the action plan are two Inuit Learning and
-            Development Project participants per year, a Youth Council, and tourism training seats in hospitality, guiding,
-            and business management.
+            Indicators of success named in the plan include more employment opportunities in the community, enhanced skill
+            development, and more educational and professional opportunities for youth. Targets written into the action items
+            are two Inuit Learning and Development Project participants per year, a Youth Council, and tourism training and
+            certifications offered in the community.
             """,
         ),
     ]
@@ -237,31 +267,39 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Wellness and recreation is one of the three sectors residents said has the greatest potential to benefit Chesterfield Inlet.
-            Youth in the 2023 consultation asked for sports, fitness, tournaments, and facilities. Eighty-five percent of youth said
-            they would be most interested in sports and fitness, and 80 percent supported programs that address social issues.
-            People also asked for a permanent mental health worker who can help with suicide, anxiety, depression, and residential school trauma.
+            f"""
+            Wellness and recreation is one of the three strategic priorities residents named in {PLAN}. In the youth survey,
+            85 percent said they would be most interested in sports and fitness activities, and 80 percent support programs
+            that address social issues. The plan calls for a permanent mental health worker to help residents with struggles such as
+            suicide, anxiety, depression and residential school trauma.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            The action plan is to run ongoing programs in social development, traditional knowledge, mental health, and healing;
-            secure a permanent mental health worker from outside the community; and expand recreation facilities — an indoor
-            swimming pool, fitness centre, indoor playground, and arena upgrades — together with a youth centre.
-            Year 1 of implementation specifically includes hiring a full-time mental health worker. Years 2 and 3 expand recreation
-            and wellness. A youth drop-in centre is listed among the longer-term projects.
+            The plan's key action items are to establish consistent, ongoing programs focused on social development, traditional
+            knowledge, mental health and healing, and secure funding for them; secure a permanent mental health worker from
+            outside the community; and increase recreational facilities (an indoor swimming pool, fitness centre, indoor playground
+            and arena upgrades) in collaboration with a youth centre. Year 1 of implementation includes hiring a full-time mental
+            health worker. Years 2 and 3 expand recreation and wellness opportunities, and a youth drop-in centre is listed among
+            the longer-term projects (years 4 and beyond).
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year budget for Wellness and Recreation is $203,333 in years 1-2 and $385,103 in years 2-3, for $588,436.
-            No long-term (years 3-5) amount is listed for this direction. Chesterfield's share in the funding table is about $58,843,
-            with about $529,593 from partners.
+            This direction totals $588,437 in the full plan's detailed 5-year budget (Part 2, p. 46): $203,333 short term and $385,103 medium term, with no long-term
+            amount. The line items are ongoing social development, traditional knowledge, mental health and healing
+            programs ($166,667), a full-time mental health worker ($100,000), a feasibility study for a new recreation
+            and fitness centre or drop-in centre ($121,770), a community food sharing initiative ($30,000), a sport
+            mentorship program ($50,000), a wellness and recreation strategy ($35,000), a food sustainability
+            feasibility assessment ($15,000), a community strategy on cannabis legalization ($20,000), and support for
+            athletes in Inuit sports and the Arctic Winter Games ($50,000). The pool, fitness centre, playground and
+            arena upgrades are action items, but the budget only funds the feasibility study. The plan projects $58,843
+            from Chesterfield Inlet and $529,593 from partners; the split adds to $1 less than the total because of
+            rounding. The requested funding in this draft is the partner share. These are 2018 projections, not awards.
             """,
         ),
     ]
@@ -269,30 +307,38 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Heritage and culture is the second strategic priority in the 2023 plan. Ninety-two percent of survey respondents want
-            the Hamlet to invest in traditional knowledge, skills, and language. Eighty-eight percent want the natural environment
-            to continue as traditional hunting and fishing grounds. Residents named connection to the land, and teaching that
-            knowledge to younger people, as the community's greatest strength.
+            f"""
+            Heritage and culture is one of the three strategic priorities residents named in {PLAN}. In the survey, 92 percent
+            want the Hamlet to invest in preserving traditional knowledge, skills and language. Residents named traditional
+            knowledge, based on a strong connection to the land, as the community's greatest strength. The plan notes that
+            Chesterfield Inlet's history and archaeological sites give it an opportunity to preserve and share its culture.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            The plan commits the community to learn from Elders and Inuit Qaujimajatuqangit while creating room for youth.
-            Overarching objectives include more programs for cultural preservation across young people, adults, and Elders,
-            and support to practice Inuit culture, including time on the land. Later phases call for programs that strengthen
-            the traditional economy, including support for community hunters through the Government of Nunavut's Country Food
-            Distribution program and Nunavut Tunngavik's Harvester Support Program.
+            The plan's key action items are to support the Kivalliq Inuit Association in building the new cultural centre so it
+            meets community needs; support the traditional land-based economy by creating incentives for residents to hunt, fish
+            and gather country food; organize regular community festivals and events where residents share food; create
+            opportunities for Elders to take part in community initiatives; establish a consistent arts and crafts program
+            teaching young people and the middle generation traditional sewing, tool making and carving; map historical sites
+            with youth and Elders as a cultural preservation project; and study the feasibility of preserving the community's
+            heritage buildings.
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year budget for Culture and Heritage is $150,550 in years 1-2, $175,000 in years 2-3, and $125,000
-            in years 3-5, for $450,550. Chesterfield's share is about $45,055 and partners about $405,495.
+            This direction totals $450,550 in the full plan's detailed 5-year budget (Part 2, p. 46): $150,550 short term, $175,000 medium term and $125,000 long term.
+            The line items are traditional land-based training program development ($15,000), annual community
+            festivals and events ($75,000 over five years), an annual Elders' program ($175,000), radio programming
+            ($15,000), an annual arts and crafts program ($75,000), archaeological mapping of historical sites
+            ($45,550), and a heritage buildings preservation feasibility study ($50,000). The KIA cultural centre is an
+            action item with no amount in this budget. The plan projects $45,055 from Chesterfield Inlet and $405,495
+            from partners. The requested funding in this draft is that partner share. These are 2018 projections, not
+            awards.
             """,
         ),
     ]
@@ -300,29 +346,37 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Sixty-seven percent of survey respondents support responsible cultural tourism or ecotourism. The 2023 plan treats
-            tourism, with commercial fishing, as a sustainable economic opportunity that can sit alongside hunting, arts, and
-            local services. Chesterfield Inlet's history as an early permanent settlement, a whaling-era meeting place, and the
-            site of the Hudson's Bay Company post (1911) is part of what the community can interpret for visitors.
+            f"""
+            In the survey for {PLAN}, 67 percent of community members support developing responsible cultural tourism or
+            ecotourism. The plan names tourism and commercial fishing as key sustainable economic opportunities. It describes
+            Chesterfield Inlet as the oldest permanent settlement in Nunavut, with a Thule site just outside the community, a
+            history tied to commercial whaling, and a Hudson's Bay Company post established in 1911, all of which give it
+            strong potential for cultural ecotourism.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            Year 1 focuses on the first stages of tourism planning. Years 2 and 3 shift to visitor accommodations, product
-            development, and refinement. Year 4 and after include hiring a tourism coordinator and standing up a tourism
-            organization. Related training, listed under education and employment, covers hospitality, guiding, and business management.
-            The existing Tangmavik / Inns North hotel is the community's current visitor accommodation.
+            The plan's key action items are to develop a five-year community ecotourism plan; improve visitor accommodations;
+            work with the Government of Nunavut to reduce insurance costs for guides and outfitters; pursue funding and political
+            support for tourism through the Truth and Reconciliation Commission's calls to action; and refine the current
+            self-guided community tour and train a local guide to deliver it. The implementation plan puts the first stages of
+            tourism planning in year 1, visitor accommodations and product development in years 2 and 3, and a tourism
+            coordinator and tourism organization in year 4 and beyond. Related tourism training sits under the education direction.
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year tourism budget is $90,000 in years 1-2, $60,000 in years 2-3, and $135,000 in years 3-5, for $285,000.
-            Chesterfield's share is about $28,500 and partners about $256,500.
+            This direction totals $285,000 in the full plan's detailed 5-year budget (Part 2, p. 46): $90,000 short term, $60,000 medium term and $135,000 long term.
+            The line items are a five-year community ecotourism plan ($40,000), an accommodations feasibility study
+            ($50,000), pursuing funding and political support for tourism ($15,000), refining the self-guided community
+            tour ($45,000), hiring a tourism coordinator including training ($85,000), and developing Authentic
+            Indigenous Moments (AIM) experiences ($50,000). Improving visitor accommodations is an action item, but the
+            budget only funds the feasibility study. The plan projects $28,500 from Chesterfield Inlet and $256,500 from
+            partners. The requested funding in this draft is that partner share. These are 2018 projections, not awards.
             """,
         ),
     ]
@@ -330,31 +384,42 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Local business and infrastructure is one of the seven community directions. Residents asked for employment built
-            through different local sectors, and for practical places to spend time and shop, including a coffee shop or corner store.
-            The plan also names housing, a business incubator, fish-plant upgrades, and — over the long term — a road toward Rankin Inlet.
+            f"""
+            Local business and infrastructure is one of the seven community directions in {PLAN}. Residents asked for employment
+            built by developing different sectors in the community, and for places such as a coffee shop or general corner store.
+            The plan aims to support local entrepreneurs, build business capacity, explore expanding the commercial fishing
+            industry, and support large territorial infrastructure projects that link Chesterfield Inlet to other economic zones.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            Year 1 lays groundwork for business development and seeks funding for major infrastructure. Years 2 and 3 include
-            upgrades to the fish plant in support of a commercial fishery, and capacity building for local businesses.
-            Longer-term projects named in the plan are a community business incubator, housing, larger infrastructure, and the
-            road to Rankin Inlet. A Kivalliq Trade Show presentation and an 'open for business' communications plan sit in the
-            related mining direction and are meant to attract responsible investment.
+            The plan's key action items are to implement and align with the 2017/2018 infrastructure plan priorities; apply for a
+            search and rescue boat and equipment through the Indigenous Community-Boat Volunteer program; complete upgrades to
+            the Iqalukpik Fish Plant and study expanding it for commercial fishing and meat processing; collaborate with the
+            Government of Nunavut on the road to Rankin Inlet and other Kivalliq communities; pursue the recommended studies for
+            the deep-sea harbour project; and establish a business incubator space with a coordinator. In the implementation plan,
+            year 1 secures funding for major infrastructure, years 2 and 3 include the fish plant upgrades and local business
+            capacity building, and the road, housing and business incubator are longer-term (year 4 and beyond).
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year budget for Local Business and Infrastructure is $297,500 in years 1-2, $110,000 in years 2-3,
-            and $40,000 in years 3-5, for $447,500. Chesterfield's share is about $44,750 and partners about $402,750.
-            The mining and resource direction is budgeted separately at $35,000 over the first two phases, mostly for hiring
-            awareness at Agnico Eagle's Meliadine mine, a Kivalliq Inuit Association benefits strategy, and investment outreach.
+            This direction totals $447,500 in the full plan's detailed 5-year budget (Part 2, p. 46): $297,500 short term, $110,000 medium term and $40,000 long term.
+            The line items are a rescue boat ($60,000), a feasibility study for Iqalukpik Fish Plant upgrades ($75,000),
+            the deep-sea harbour study ($90,000), a community asset management plan ($12,500), developing local businesses
+            that complement the land-based economy, culture or ecotourism ($20,000), a youth awareness campaign ($15,000),
+            a study on streamlining shipping and transportation ($35,000), a quarry development plan ($25,000), a
+            restaurant feasibility study ($50,000), a part-time program coordinator including training ($40,000), and a
+            housing strategy ($25,000). The fish plant upgrades themselves, the road to Rankin Inlet and a business
+            incubator space have no amounts in this budget. The plan projects $44,750 from Chesterfield Inlet and
+            $402,750 from partners. The requested funding in this draft is that partner share. The separate Mining and
+            Resource Development direction totals $35,000: a Kivalliq Trade Show presentation ($5,000), a go-forward
+            strategy ($15,000) and a communications plan for mining companies ($15,000). These are 2018 projections,
+            not awards.
             """,
         ),
     ]
@@ -362,29 +427,39 @@ def build_proposals() -> list[dict]:
         section(
             "need",
             "Community need",
-            """
-            Eighty-eight percent of survey respondents want the surrounding environment to remain hunting and fishing grounds.
-            The 2023 plan treats commercial fishing and care for the land as paired work: develop a fishery with the Aqigiq
-            Hunters and Trappers Organization, and limit harm from shipping on wildlife, marine animals, and local hunting.
+            f"""
+            In the survey for {PLAN}, 88 percent of community members want the natural environment to continue serving as
+            traditional hunting and fishing grounds. The plan pairs care for the land with planning for commercial fishing,
+            mitigating negative environmental impacts and adopting cleaner technologies.
             """,
         ),
         section(
             "activities",
             "Proposed work",
             """
-            Action items are to work with Fisheries and Oceans, the Department of Environment, and the Aqigiq HTO on fishing
-            goals and at least one project that benefits the community; write an environmental mitigation strategy for shipping;
-            look at clean technologies for water treatment, waste, and energy, including the Indigenous Innovations demonstration
-            project and iSolara solar power; and study whether a bio-research lab could monitor wildlife and migration routes.
-            Years 2 and 3 also include the shift toward cleaner energy and the fish-plant upgrades that would support a commercial fishery.
+            The plan's key action items are to make sure selective hunting techniques are passed down to younger generations;
+            support knowledgeable community hunters through programs such as the Government of Nunavut's Country Food
+            Distribution program and Nunavut Tunngavik's Harvester Support Program; work with Fisheries and Oceans Canada, the
+            Department of Environment and the Aqigiq HTO to set fishing development goals and start at least one project that
+            benefits the community; develop an environmental mitigation strategy for the impacts of shipping on wildlife,
+            marine animals and local hunting; implement clean technologies for water treatment, waste processing and energy
+            through the Indigenous Innovations Corporation's demonstration project and iSolara Solar Power; and study the
+            feasibility of a bio-research lab to monitor wildlife and migration routes. Years 2 and 3 of implementation begin
+            the shift to cleaner energy and technologies.
             """,
         ),
         section(
             "budget",
             "CED plan budget",
             """
-            The 2023 five-year environment budget is $60,000 in years 1-2, $123,198 in years 2-3, and $35,000 in years 3-5,
-            for $218,198. Chesterfield's share is about $21,820 and partners about $196,378.
+            This direction totals $218,198 in the full plan's detailed 5-year budget (Part 2, p. 46): $60,000 short term, $123,198 medium term and $35,000 long term.
+            The line items are education on selective hunting techniques ($25,000), training so the hunters used for
+            the Country Food Distribution and Harvester Support programs are experienced and knowledgeable ($35,000),
+            an environmental mitigation strategy for shipping ($50,000), a community waste management plan ($35,000),
+            a bio-research lab feasibility study ($38,198), and geospatial mapping ($35,000). The fishing project with
+            DFO, the Department of Environment and the Aqigiq HTO, and the clean-technology projects, are action items
+            with no amounts in this budget. The plan projects $21,820 from Chesterfield Inlet and $196,378 from
+            partners. The requested funding in this draft is that partner share. These are 2018 projections, not awards.
             """,
         ),
     ]
@@ -394,214 +469,76 @@ def build_proposals() -> list[dict]:
         proposal(
             "ci-edu-learning-centre",
             "Arctic College Learning Centre and local training",
-            "Chesterfield Inlet 2023 CED Plan — Education, Employment and Training",
+            "Education, Employment & Training",
             "exported",
             5,
             470880,
             523200,
-            "Expand the Arctic College Learning Centre and deliver the training actions in the 2023 CED plan.",
+            "Fund the education and training items in the Chesterfield Inlet 2023 CED plan budget, including a feasibility study for a new Arctic College Learning Centre and a guidance counsellor.",
             edu_sections,
             [common_need, ("activities", "Work plan", "List the education and training actions."), ("budget", "Budget", "Use the CED plan figures."), ("outcomes", "Outcomes", "Name the plan's success indicators.")],
-            exported=True,
         ),
         proposal(
             "ci-wellness-recreation",
             "Mental health worker and youth recreation",
-            "Chesterfield Inlet 2023 CED Plan — Wellness and Recreation",
+            "Wellness & Recreation",
             "ready_to_export",
             4,
             529593,
-            588436,
-            "Hire a full-time mental health worker and expand youth recreation, as set out in the 2023 CED plan.",
+            588437,
+            "Hire a full-time mental health worker, run ongoing wellness programs, and study a new recreation and fitness centre, as budgeted in the Chesterfield Inlet 2023 CED plan.",
             wellness_sections,
             [common_need, ("activities", "Work plan", "List wellness and recreation actions."), ("budget", "Budget", "Use the CED plan figures.")],
         ),
         proposal(
             "ci-culture-heritage",
-            "Traditional knowledge, language, and time on the land",
-            "Chesterfield Inlet 2023 CED Plan — Culture and Heritage",
+            "Traditional knowledge, culture, and heritage sites",
+            "Culture & Heritage",
             "ready_to_export",
             4,
             405495,
             450550,
-            "Invest in traditional knowledge, Inuktitut, and land-based programs identified by residents in the 2023 CED plan.",
+            "Fund the Elders' program, arts and crafts, community events, land-based training, and heritage site work budgeted in the Chesterfield Inlet 2023 CED plan.",
             culture_sections,
             [common_need, ("activities", "Work plan", "List culture and heritage actions."), ("budget", "Budget", "Use the CED plan figures.")],
         ),
         proposal(
             "ci-tourism",
             "Cultural tourism and visitor accommodations",
-            "Chesterfield Inlet 2023 CED Plan — Tourism",
+            "Tourism",
             "draft",
             3,
             256500,
             285000,
-            "Plan responsible cultural tourism and ecotourism, then improve visitor accommodations and hire a tourism coordinator.",
+            "Develop a community ecotourism plan, study visitor accommodations, refine the community tour, and hire a tourism coordinator, as budgeted in the Chesterfield Inlet 2023 CED plan.",
             tourism_sections,
             [common_need, ("activities", "Work plan", "List tourism actions."), ("budget", "Budget", "Use the CED plan figures.")],
         ),
         proposal(
             "ci-local-business",
             "Fish plant, local business, and community infrastructure",
-            "Chesterfield Inlet 2023 CED Plan — Local Business and Infrastructure",
+            "Local Business & Infrastructure",
             "draft",
             2,
             402750,
             447500,
-            "Upgrade the fish plant, build local business capacity, and advance the infrastructure projects in the 2023 CED plan.",
+            "Buy a rescue boat, study Iqalukpik Fish Plant upgrades and the deep-sea harbour, and fund the business and planning studies budgeted in the Chesterfield Inlet 2023 CED plan.",
             business_sections,
             [common_need, ("activities", "Work plan", "List business and infrastructure actions."), ("budget", "Budget", "Use the CED plan figures.")],
         ),
         proposal(
             "ci-environment-fishing",
-            "Commercial fishing and care for hunting grounds",
-            "Chesterfield Inlet 2023 CED Plan — Environment",
-            "draft",
-            2,
+            "Care for the land and hunting grounds",
+            "Environment",
+            "exported",
+            5,
             196378,
             218198,
-            "Start one community fishing project with the Aqigiq HTO and set shipping and clean-energy actions from the 2023 CED plan.",
+            "Fund hunter education and training, a shipping mitigation strategy, a waste management plan, a bio-research lab study, and geospatial mapping, as budgeted in the Chesterfield Inlet 2023 CED plan.",
             environment_sections,
             [common_need, ("activities", "Work plan", "List environment actions."), ("budget", "Budget", "Use the CED plan figures.")],
         ),
     ]
-
-
-def build_report() -> dict:
-    analyzed = datetime.now(timezone.utc).isoformat()
-    def metric(metric_id, label, score, summary, issues=None):
-        issues = issues or []
-        return {
-            "id": metric_id,
-            "label": label,
-            "category_id": "community_fit",
-            "description": summary,
-            "score": score,
-            "issues_count": len(issues),
-            "status": "needs_revision" if issues else "strong",
-            "summary": summary,
-            "issues": issues,
-            "suggestions": [issue["recommendation"] for issue in issues],
-            "linked_sections": ["need", "activities", "budget"],
-        }
-
-    warning = {
-        "issue_id": "ci-budget-source",
-        "title": "Budget is a plan allocation",
-        "message": "The dollar figures are the 2023 CED plan's five-year allocations, not confirmed funder awards or supplier quotes.",
-        "severity": "warning",
-        "confidence_score": 0.9,
-        "section_key": "budget",
-        "anchor_type": "section",
-        "anchor_text": "CED plan budget",
-        "anchor_hint": "budget",
-        "affected_sections": ["budget"],
-        "excerpt": "The 2023 five-year budget for Education, Employment and Training is $223,200 in years 1-2, $100,000 in years 2-3, and $200,000 in years 3-5.",
-        "recommendation": "Replace the plan allocation with eligible-cost quotes and name the funder before this draft is submitted anywhere.",
-    }
-    info = {
-        "issue_id": "ci-population-year",
-        "title": "Population figures are from the 2013 plan",
-        "message": "The population numbers cited are the 2013 plan's 'about 400' description and the 2011 census count of 313.",
-        "severity": "info",
-        "confidence_score": 0.8,
-        "section_key": "need",
-        "anchor_type": "section",
-        "anchor_text": "Community need",
-        "anchor_hint": "need",
-        "affected_sections": ["need"],
-        "excerpt": "The 2011 census counted 190 residents under 24.",
-        "recommendation": "Add the latest Nunavut Bureau of Statistics or census count before using the population figure in an application.",
-    }
-    return {
-        "id": REPORT_ID,
-        "source_proposal_id": "ci-edu-learning-centre",
-        "title": "Readiness review — Arctic College Learning Centre and local training",
-        "source_filename": "Chesterfield-Inlet-CED-Plan-Brochure-Digital.pdf",
-        "status": "complete",
-        "rubric_version": "proposal-readiness-v1",
-        "overall_score": 78,
-        "priority_issue_count": 1,
-        "category_scores": {"community_fit": 88, "evidence": 74, "budget": 68},
-        "analyzed_at": analyzed,
-        "grant_context": {
-            "community_name": "Chesterfield Inlet",
-            "source": "Chesterfield Inlet 2023 Community Economic Development Plan",
-        },
-        "extracted_sections": [
-            {"key": "need", "title": "Community need", "body": "Education, employment, and training are the first strategic priority."},
-            {"key": "activities", "title": "Proposed work", "body": "Expand the Arctic College Learning Centre and related training."},
-            {"key": "budget", "title": "CED plan budget", "body": "Five-year education budget of $523,200."},
-        ],
-        "report": {
-            "analysis": {
-                "analysis": {
-                    "proposal_id": "ci-edu-learning-centre",
-                    "file_name": "Chesterfield-Inlet-CED-Plan-Brochure-Digital.pdf",
-                    "file_type": "workspace",
-                    "uploaded_at": analyzed,
-                    "last_analyzed_at": analyzed,
-                },
-                "extraction": {
-                    "extractor": "ced-plan-brochure",
-                    "confidence": "high",
-                    "preview_mode": "sectioned",
-                    "raw_text_length": 12000,
-                    "cleaned_text_length": 8000,
-                    "section_count": 4,
-                    "numbering_gaps_detected": False,
-                    "warnings": [],
-                    "candidate_extractors": [{"extractor": "ced-plan-brochure", "score": 0.9, "chars": 8000}],
-                },
-                "overall_score": 78,
-                "issue_count": 2,
-                "score_label": "Solid community fit, budget still needs a funder",
-                "rubric_version": "proposal-readiness-v1",
-                "report_summary": "The draft matches the 2023 CED priority on education and training. It still needs a named funder and current population figures.",
-                "additional_submission_requirements": [
-                    "Name the funding program and confirm which CED budget lines are eligible.",
-                    "Attach the latest population count and a Council motion if the funder requires one.",
-                ],
-                "assistant_starters": [
-                    "Which funder should this Arctic College project be aimed at?",
-                    "What population figure should replace the 2011 census count?",
-                ],
-                "raw_preview_text": "Chesterfield Inlet 2023 Community Economic Development Plan — Education, Employment and Training.",
-                "rubric": {"version": "proposal-readiness-v1", "score_bands": [{"minimum": 75, "label": "Strong foundation"}], "categories": []},
-                "sections": [
-                    {"key": "need", "title": "Community need", "body": "Education and employment are the top community priority.", "order": 1, "issues_count": 1, "warnings": [], "compliance_gaps": [], "section_score": 86},
-                    {"key": "activities", "title": "Proposed work", "body": "Learning Centre expansion and named training actions.", "order": 2, "issues_count": 0, "warnings": [], "compliance_gaps": [], "section_score": 90},
-                    {"key": "budget", "title": "CED plan budget", "body": "Five-year allocation of $523,200.", "order": 3, "issues_count": 1, "warnings": [], "compliance_gaps": [], "section_score": 68},
-                ],
-                "categories": [
-                    {
-                        "id": "community_fit",
-                        "label": "Community fit",
-                        "score": 88,
-                        "issues": 0,
-                        "assessed": True,
-                        "metrics": [metric("fit", "Tied to a stated community priority", 92, "Education and employment are the first of the seven directions, and the survey results are cited.")],
-                    },
-                    {
-                        "id": "evidence",
-                        "label": "Evidence",
-                        "score": 74,
-                        "issues": 1,
-                        "assessed": True,
-                        "metrics": [metric("evidence", "Sources named", 74, "Survey percentages and the 2011 census are cited. The population figure is more than a decade old.", [info])],
-                    },
-                    {
-                        "id": "budget",
-                        "label": "Budget",
-                        "score": 68,
-                        "issues": 1,
-                        "assessed": True,
-                        "metrics": [metric("budget", "Cost basis", 68, "Amounts match the 2023 five-year CED budget table, including the Chesterfield and partner split.", [warning])],
-                    },
-                ],
-            }
-        },
-    }
 
 
 def clear_previous(db_path: str) -> None:
@@ -620,37 +557,6 @@ def clear_previous(db_path: str) -> None:
         conn.close()
 
 
-def stamp_times(db_path: str) -> None:
-    now = datetime.now(timezone.utc)
-    stamps = {
-        "ci-edu-learning-centre": (now - timedelta(days=21), now - timedelta(days=2), now - timedelta(days=2)),
-        "ci-wellness-recreation": (now - timedelta(days=18), now - timedelta(days=4), None),
-        "ci-culture-heritage": (now - timedelta(days=16), now - timedelta(days=6), None),
-        "ci-tourism": (now - timedelta(days=12), now - timedelta(days=1), None),
-        "ci-local-business": (now - timedelta(days=9), now - timedelta(hours=8), None),
-        "ci-environment-fishing": (now - timedelta(days=7), now - timedelta(hours=3), None),
-    }
-    conn = sqlite3.connect(db_path)
-    try:
-        for proposal_id, (created, updated, exported) in stamps.items():
-            conn.execute(
-                "UPDATE proposals SET created_at = ?, updated_at = ?, last_exported_at = ? WHERE id = ?",
-                (
-                    created.isoformat(),
-                    updated.isoformat(),
-                    exported.isoformat() if exported else None,
-                    proposal_id,
-                ),
-            )
-        conn.execute(
-            "UPDATE proposal_feedback_reports SET created_at = ?, analyzed_at = ? WHERE id = ?",
-            ((now - timedelta(days=1, hours=2)).isoformat(), (now - timedelta(days=1, hours=2)).isoformat(), REPORT_ID),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def main() -> None:
     from backend.app.workspace_store import _db_path
 
@@ -659,9 +565,8 @@ def main() -> None:
     upsert_community_profile(USER_ID, PROFILE)
     for payload in build_proposals():
         create_proposal(USER_ID, payload)
-    create_feedback_report(USER_ID, build_report())
-    stamp_times(db_path)
     print(f"Seeded Chesterfield Inlet workspace for {USER_ID} in {db_path}")
+    print("Generate the readiness review with: POST /api/proposals/ci-edu-learning-centre/feedback-report")
 
 
 if __name__ == "__main__":

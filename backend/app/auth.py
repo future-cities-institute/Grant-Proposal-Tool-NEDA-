@@ -13,8 +13,8 @@ def get_auth_mode() -> str:
 def dev_user() -> dict[str, Any]:
     return {
         "id": os.getenv("DEV_USER_ID", "dev-user"),
-        "email": os.getenv("DEV_USER_EMAIL", "prave@example.com"),
-        "name": os.getenv("DEV_USER_NAME", "Prave"),
+        "email": os.getenv("DEV_USER_EMAIL", "edo_hamlet@qiniq.com"),
+        "name": os.getenv("DEV_USER_NAME", "David"),
     }
 
 

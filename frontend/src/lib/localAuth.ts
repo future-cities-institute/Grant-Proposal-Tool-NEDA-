@@ -22,9 +22,9 @@ export function localBypassUser(): User {
   return {
     id: "dev-user",
     aud: "authenticated",
-    email: "prave@example.com",
+    email: "edo_hamlet@qiniq.com",
     app_metadata: {},
-    user_metadata: { full_name: "Prave", name: "Prave" },
+    user_metadata: { full_name: "David", name: "David" },
     created_at: new Date(0).toISOString(),
   } as User;
 }
