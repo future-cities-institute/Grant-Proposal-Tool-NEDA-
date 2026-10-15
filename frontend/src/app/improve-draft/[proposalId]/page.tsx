@@ -1244,7 +1244,7 @@ export default function ImproveDraftPage({ params }: { params: { proposalId: str
                             {rewritePreview.scope === "paragraph" ? "Paragraph update" : "Full section update"}
                           </span>
                         </div>
-                        <p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">
+                        <p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground">
                           {rewritePreview.text}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">

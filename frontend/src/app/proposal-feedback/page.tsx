@@ -9,8 +9,13 @@ import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { analyzeProposalUpload } from "@/lib/api";
+import { ReportProgressOverlay, timedStages, useReportProgress } from "@/components/ReportProgress";
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
+const REVIEW_STAGES = timedStages(
+  ["Extracting text from your files", "Reading proposal sections", "Scoring against the rubric", "Writing recommendations"],
+  60000
+);
 
 export default function ProposalFeedbackUploadPage() {
   const router = useRouter();
@@ -19,12 +24,17 @@ export default function ProposalFeedbackUploadPage() {
   const [proposalFile, setProposalFile] = useState<File | null>(null);
   const [grantFile, setGrantFile] = useState<File | null>(null);
   const [inputError, setInputError] = useState("");
+  const progress = useReportProgress(REVIEW_STAGES);
   const analysisMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!proposalFile) throw new Error("Select a proposal draft to continue.");
-      return analyzeProposalUpload(proposalFile, grantFile, parentReportId);
+      progress.start();
+      const report = await analyzeProposalUpload(proposalFile, grantFile, parentReportId);
+      await progress.complete();
+      return report;
     },
     onSuccess: (report) => router.push(`/proposal-feedback/${report.id}`),
+    onError: () => progress.reset(),
   });
 
   const selectFile = (file: File | undefined, kind: "proposal" | "grant") => {
@@ -51,6 +61,14 @@ export default function ProposalFeedbackUploadPage() {
 
   return (
     <AppShell>
+      {(analysisMutation.isPending || analysisMutation.isSuccess) && (
+        <ReportProgressOverlay
+          title="Reviewing your proposal"
+          percent={progress.percent}
+          label={progress.label}
+          elapsedMs={progress.elapsedMs}
+        />
+      )}
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <p className="text-sm font-medium text-primary">Proposal review</p>

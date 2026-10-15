@@ -51,6 +51,7 @@ import { ProposalSections } from "@/components/ProposalSections";
 import { ReportView } from "@/components/ReportView";
 import { cn } from "@/lib/utils";
 import { ContactFci } from "@/components/ContactFci";
+import { ReportProgressOverlay, timedStages, useReportProgress, type ProgressStage } from "@/components/ReportProgress";
 import { copyProposalText, formatProposalText } from "@/lib/proposalClipboard";
 
 const STEPS = [
@@ -60,6 +61,17 @@ const STEPS = [
   { id: 4, label: "Generate report" },
   { id: 5, label: "Export draft" },
 ];
+
+const GENERATION_STAGES: ProgressStage[] = [
+  { label: "Drafting proposal sections", end: 55, expectedMs: 45000 },
+  { label: "Answering grant prompts", end: 88, expectedMs: 40000 },
+  { label: "Checking compliance", end: 97, expectedMs: 8000 },
+];
+
+const REVIEW_STAGES = timedStages(
+  ["Reading proposal sections", "Scoring against the rubric", "Writing recommendations"],
+  45000
+);
 
 function applicationDetailsFrom(values: CommunityFormValues): Partial<CommunityProfile> {
   const reusable = new Set<string>(COMMUNITY_PROFILE_FIELD_KEYS);
@@ -75,9 +87,17 @@ function safestSavedStep(proposal: SavedProposal): number {
   return 1;
 }
 
-export default function ProposalPage({ searchParams }: { searchParams?: { proposalId?: string } }) {
+function initialSavedStep(proposal: SavedProposal, requestedStep: number): number {
+  const safest = safestSavedStep(proposal);
+  if (!Number.isInteger(requestedStep) || requestedStep < 1 || requestedStep > safest) return safest;
+  if (requestedStep === 4 && !proposal.draft?.sections?.length) return safest;
+  return requestedStep;
+}
+
+export default function ProposalPage({ searchParams }: { searchParams?: { proposalId?: string; step?: string } }) {
   const router = useRouter();
   const requestedProposalId = searchParams?.proposalId || "";
+  const requestedStep = Number(searchParams?.step);
   const communityProfileQuery = useQuery({ queryKey: ["community-profile"], queryFn: getCommunityProfile });
   const savedProposalQuery = useQuery({
     queryKey: ["saved-proposal", requestedProposalId],
@@ -108,6 +128,8 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
   const communityRevisionRef = useRef(0);
   const requirementsRevisionRef = useRef(0);
   const hydratedProposalRef = useRef<string | null>(null);
+  const generationProgress = useReportProgress(GENERATION_STAGES);
+  const reviewProgress = useReportProgress(REVIEW_STAGES);
 
   useEffect(() => {
     if (communityProfileQuery.isLoading || communityFormValues) return;
@@ -142,9 +164,9 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       ...snapshot,
       ...applicationDetails,
     } as CommunityFormValues);
-    setStep(safestSavedStep(saved));
+    setStep(initialSavedStep(saved, requestedStep));
     hydratedProposalRef.current = saved.id;
-  }, [requestedProposalId, savedProposalQuery.data]);
+  }, [requestedProposalId, requestedStep, savedProposalQuery.data]);
 
   const saveCommunityDraft = useCallback(
     (values: CommunityFormValues) => {
@@ -289,10 +311,16 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
   const feedbackMutation = useMutation({
     mutationFn: async () => {
       if (!proposalId) throw new Error("Save the proposal before requesting a review.");
-      return analyzeSavedProposal(proposalId);
+      reviewProgress.start();
+      const report = await analyzeSavedProposal(proposalId);
+      await reviewProgress.complete();
+      return report;
     },
     onSuccess: (report) => router.push(`/proposal-feedback/${report.id}`),
-    onError: (error) => setExportError(error instanceof Error ? error.message : "Proposal review failed."),
+    onError: (error) => {
+      reviewProgress.reset();
+      setExportError(error instanceof Error ? error.message : "Proposal review failed.");
+    },
   });
 
   const copyFinalProposal = async () => {
@@ -348,9 +376,13 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
       requirements: Requirements;
       budget: number;
     }) => {
+      generationProgress.start();
       const d = await generateDraft(p, r, budget);
+      generationProgress.advance();
       const { enhanced: enh, structured_answers, prompt_coverage } = await enhanceDraft(d, r, p);
+      generationProgress.advance();
       const val = await evaluateDraftCompliance(d.sections || []);
+      await generationProgress.complete();
       return {
         draft: d,
         enhanced: enh,
@@ -361,7 +393,9 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
         requirements: r,
       };
     },
+    onError: () => generationProgress.reset(),
     onSuccess: (data) => {
+      generationProgress.reset();
       setDraft(data.draft);
       setEnhanced(data.enhanced);
       setStructuredAnswers(data.structuredAnswers);
@@ -561,6 +595,22 @@ export default function ProposalPage({ searchParams }: { searchParams?: { propos
 
   return (
     <div className="min-h-screen">
+      {generateMutation.isPending && (
+        <ReportProgressOverlay
+          title="Generating your proposal"
+          percent={generationProgress.percent}
+          label={generationProgress.label}
+          elapsedMs={generationProgress.elapsedMs}
+        />
+      )}
+      {(feedbackMutation.isPending || feedbackMutation.isSuccess) && (
+        <ReportProgressOverlay
+          title="Reviewing your proposal"
+          percent={reviewProgress.percent}
+          label={reviewProgress.label}
+          elapsedMs={reviewProgress.elapsedMs}
+        />
+      )}
       <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="container mx-auto flex h-14 items-center gap-4 px-4">
           <Link href="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">

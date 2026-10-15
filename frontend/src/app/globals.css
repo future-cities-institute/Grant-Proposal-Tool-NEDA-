@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    /* NEDA palette on cream: blue #075b8f, crimson #c81045, gold #f5b51b. */
+    /* NEDA palette on white: blue #075b8f, crimson #c81045, gold #f5b51b. */
     --neda-blue: 203 91% 29%;
     --neda-crimson: 342 85% 42%;
     --neda-gold: 42 91% 53%;
-    --background: 38 52% 93%;
+    --background: 0 0% 100%;
     --foreground: 211 42% 14%;
-    --card: 40 48% 96%;
+    --card: 0 0% 100%;
     --card-foreground: 211 42% 14%;
     --primary: var(--neda-blue);
     --primary-foreground: 0 0% 100%;
-    --secondary: 38 40% 88%;
+    --secondary: 210 25% 95%;
     --secondary-foreground: 203 80% 24%;
-    --muted: 38 35% 89%;
+    --muted: 210 20% 95%;
     --muted-foreground: 211 15% 39%;
-    --accent: 43 70% 88%;
+    --accent: 205 45% 94%;
     --accent-foreground: 211 42% 18%;
     --destructive: var(--neda-crimson);
-    --border: 32 22% 78%;
-    --input: 32 20% 74%;
+    --border: 214 18% 86%;
+    --input: 214 16% 80%;
     --ring: var(--neda-blue);
     --radius: 0.75rem;
   }
@@ -37,14 +37,16 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    /* Long URLs or identifiers in generated proposal text must wrap instead of running off the page. */
+    overflow-wrap: break-word;
   }
 }
 
-/* Cream canvas with soft brand washes. */
+/* White canvas with soft brand washes. */
 .gradient-bg {
-  background: radial-gradient(900px 460px at 12% -18%, hsl(43 70% 82% / 0.45) 0%, transparent 62%),
+  background: radial-gradient(900px 460px at 12% -18%, hsl(43 70% 82% / 0.18) 0%, transparent 62%),
     radial-gradient(900px 460px at 95% -18%, hsl(204 55% 82% / 0.35) 0%, transparent 60%),
-    linear-gradient(180deg, hsl(40 55% 95%) 0%, hsl(var(--background)) 100%);
+    linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(var(--background)) 100%);
 }
 
 .app-neon-bg {

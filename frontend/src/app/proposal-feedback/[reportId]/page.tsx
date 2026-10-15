@@ -46,9 +46,19 @@ export default function ProposalFeedbackReportPage({ params }: { params: { repor
   return (
     <AppShell>
       <main className="mx-auto max-w-6xl space-y-6 pb-12">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to dashboard
-        </Link>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 print:hidden">
+          {report?.source_proposal_id && (
+            <Link
+              href={`/proposal?proposalId=${encodeURIComponent(report.source_proposal_id)}&step=4`}
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to generated report
+            </Link>
+          )}
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Back to dashboard
+          </Link>
+        </div>
 
         {reportQuery.isLoading ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading review report...</p>

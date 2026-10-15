@@ -175,7 +175,7 @@ export function ProposalSectionEditor({
                   Apply suggestion
                 </Button>
               </div>
-              <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">{activePreview.text}</p>
+              <p className="mt-3 whitespace-pre-wrap break-words text-sm text-foreground">{activePreview.text}</p>
             </div>
           )}
         </CardContent>
