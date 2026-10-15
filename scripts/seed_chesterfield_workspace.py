@@ -19,11 +19,16 @@ seeded: generate it with the app's analyzer (POST /api/proposals/<id>/feedback-r
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 
 from backend.app.workspace_store import (
+    _connect,
+    _db_path,
+    _run,
+    _using_postgres,
     create_proposal,
+    get_or_create_user,
+    init_workspace_store,
     upsert_community_profile,
 )
 
@@ -541,31 +546,26 @@ def build_proposals() -> list[dict]:
     ]
 
 
-def clear_previous(db_path: str) -> None:
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            f"DELETE FROM proposal_feedback_reports WHERE id = ? OR source_proposal_id IN ({','.join('?' for _ in PROPOSAL_IDS)})",
+def clear_previous() -> None:
+    placeholders = ",".join("?" for _ in PROPOSAL_IDS)
+    with _connect() as conn:
+        _run(
+            conn,
+            f"DELETE FROM proposal_feedback_reports WHERE id = ? OR source_proposal_id IN ({placeholders})",
             (REPORT_ID, *PROPOSAL_IDS),
         )
-        conn.execute(
-            f"DELETE FROM proposals WHERE id IN ({','.join('?' for _ in PROPOSAL_IDS)})",
-            PROPOSAL_IDS,
-        )
-        conn.commit()
-    finally:
-        conn.close()
+        _run(conn, f"DELETE FROM proposals WHERE id IN ({placeholders})", tuple(PROPOSAL_IDS))
 
 
 def main() -> None:
-    from backend.app.workspace_store import _db_path
-
-    db_path = str(_db_path())
-    clear_previous(db_path)
+    init_workspace_store()
+    get_or_create_user(USER_ID, "edo_hamlet@qiniq.com", "David")
+    clear_previous()
     upsert_community_profile(USER_ID, PROFILE)
     for payload in build_proposals():
         create_proposal(USER_ID, payload)
-    print(f"Seeded Chesterfield Inlet workspace for {USER_ID} in {db_path}")
+    target = "Postgres (DATABASE_URL)" if _using_postgres() else str(_db_path())
+    print(f"Seeded Chesterfield Inlet workspace for {USER_ID} in {target}")
     print("Generate the readiness review with: POST /api/proposals/ci-edu-learning-centre/feedback-report")
 
 
