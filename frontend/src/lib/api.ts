@@ -1,10 +1,13 @@
 ﻿import { API_BASE } from "./utils";
+import { hamletSessionToken } from "./hamletAuth";
 import { supabase } from "./supabase";
 
 const RAG_USE_CASE = process.env.NEXT_PUBLIC_RAG_USE_CASE || "default";
 
 async function authHeaders(): Promise<Record<string, string>> {
   if (typeof window === "undefined") return {};
+  const hamletToken = hamletSessionToken();
+  if (hamletToken) return { Authorization: `Bearer ${hamletToken}` };
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};

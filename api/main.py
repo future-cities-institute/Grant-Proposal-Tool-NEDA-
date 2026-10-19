@@ -48,6 +48,9 @@ from backend.app.compliance.proposal_models import (
     ProposalSection,
 )
 from backend.app.auth import user_from_authorization_header
+from backend.app.hamlet_accounts import authenticate as authenticate_hamlet
+from backend.app.hamlet_accounts import issue_token as issue_hamlet_token
+from backend.app.hamlet_accounts import public_user as public_hamlet_user
 from backend.app.workspace_store import (
     create_feedback_report as store_create_feedback_report,
     create_proposal as store_create_proposal,
@@ -638,6 +641,20 @@ def _render_docx(body: ExportDraftDocxRequest) -> bytes:
 
 
 # ---------- Endpoints ----------
+class HamletLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/hamlet-login")
+def hamlet_login(body: HamletLoginRequest) -> Dict[str, Any]:
+    account = authenticate_hamlet(body.username, body.password)
+    if account is None:
+        raise HTTPException(status_code=401, detail="That user ID or password is not recognized.")
+    user = public_hamlet_user(account)
+    return {"token": issue_hamlet_token(user["username"]), "user": user}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

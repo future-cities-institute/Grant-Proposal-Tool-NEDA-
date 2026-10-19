@@ -19,16 +19,25 @@ def dev_user() -> dict[str, Any]:
 
 
 def user_from_authorization_header(authorization: str | None) -> dict[str, Any]:
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        from backend.app.hamlet_accounts import user_from_token
+
+        hamlet_user = user_from_token(token)
+        if hamlet_user:
+            return hamlet_user
+
     mode = get_auth_mode()
     if mode == "cognito":
-        if not authorization or not authorization.lower().startswith("bearer "):
+        if not token:
             raise ValueError("Missing bearer token.")
-        return verify_cognito_token(authorization.split(" ", 1)[1].strip())
+        return verify_cognito_token(token)
 
     if mode == "supabase":
-        if not authorization or not authorization.lower().startswith("bearer "):
-            return dev_user()
-        return verify_supabase_token(authorization.split(" ", 1)[1].strip())
+        if not token:
+            raise ValueError("Missing bearer token.")
+        return verify_supabase_token(token)
 
     if authorization and authorization.lower().startswith("bearer "):
         payload = _decode_jwt_payload_without_verification(authorization.split(" ", 1)[1].strip())

@@ -4,6 +4,13 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Session, User } from "@supabase/supabase-js";
+import {
+  clearHamletSession,
+  readHamletSession,
+  saveHamletSession,
+  userFromHamletSession,
+  type HamletSession,
+} from "@/lib/hamletAuth";
 import { clearLocalBypass, enableLocalBypass, isLocalBypassEnabled, localBypassUser } from "@/lib/localAuth";
 import { supabase } from "@/lib/supabase";
 import { ToastProvider } from "@/components/ui/toast";
@@ -14,6 +21,7 @@ type AuthContextValue = {
   loading: boolean;
   signOut: () => Promise<void>;
   startLocalSession: () => void;
+  startHamletSession: (session: HamletSession) => void;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -22,6 +30,7 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   signOut: async () => {},
   startLocalSession: () => {},
+  startHamletSession: () => {},
 });
 
 export function useAuth() {
@@ -35,16 +44,19 @@ function isPublicPath(pathname: string) {
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [bypassed, setBypassed] = useState(false);
+  const [hamletSession, setHamletSession] = useState<HamletSession | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
-  const signedIn = Boolean(session) || bypassed;
+  const signedIn = Boolean(session) || bypassed || Boolean(hamletSession);
 
   useEffect(() => {
-    const bypass = isLocalBypassEnabled();
+    const existingHamlet = readHamletSession();
+    const bypass = !existingHamlet && isLocalBypassEnabled();
+    setHamletSession(existingHamlet);
     setBypassed(bypass);
     let active = true;
-    if (bypass) {
+    if (existingHamlet || bypass) {
       setLoading(false);
     } else {
       supabase.auth
@@ -83,15 +95,27 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     clearLocalBypass();
+    clearHamletSession();
     setBypassed(false);
+    setHamletSession(null);
     setSession(null);
     await supabase.auth.signOut().catch(() => undefined);
     router.replace("/login");
   };
 
   const startLocalSession = () => {
+    clearHamletSession();
+    setHamletSession(null);
     enableLocalBypass();
     setBypassed(true);
+  };
+
+  const startHamletSession = (next: HamletSession) => {
+    clearLocalBypass();
+    setBypassed(false);
+    setSession(null);
+    saveHamletSession(next);
+    setHamletSession(next);
   };
 
   const isPublic = isPublicPath(pathname);
@@ -99,7 +123,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     loading ||
     (!signedIn && !isPublic) ||
     (signedIn && (pathname === "/" || pathname === "/login"));
-  const user: User | null = session?.user ?? (bypassed ? localBypassUser() : null);
+  const user: User | null =
+    session?.user ??
+    (hamletSession ? userFromHamletSession(hamletSession) : null) ??
+    (bypassed ? localBypassUser() : null);
 
   if (waitingForRedirect) {
     return (
@@ -110,7 +137,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, signOut, startLocalSession }}>
+    <AuthContext.Provider value={{ session, user, loading, signOut, startLocalSession, startHamletSession }}>
       {children}
     </AuthContext.Provider>
   );

@@ -21,6 +21,7 @@ data/processed/
 *.err.log
 api/.env
 frontend/.env.local
+NEDA-hamlet-logins.xlsx
 
 frontend/.next/
 frontend/tsconfig.tsbuildinfo

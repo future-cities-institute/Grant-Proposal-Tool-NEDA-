@@ -17,6 +17,8 @@ export default function AccountPage() {
   const [name, setName] = useState("");
   const [status, setStatus] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const isHamletAccount = Boolean(user?.email?.endsWith("@hamlets.neda"));
+  const userId = String(user?.user_metadata?.username || user?.email?.split("@")[0] || "");
 
   useEffect(() => {
     const metadata = user?.user_metadata || {};
@@ -27,6 +29,11 @@ export default function AccountPage() {
     const nextName = name.trim();
     if (!nextName) {
       setStatus("Enter a name before saving.");
+      return;
+    }
+
+    if (isHamletAccount) {
+      setStatus("This hamlet name is set for the shared sign-in sheet.");
       return;
     }
 
@@ -81,12 +88,12 @@ export default function AccountPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="account-email">Email</Label>
+                <Label htmlFor="account-email">{isHamletAccount ? "User ID" : "Email"}</Label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="account-email"
-                    value={user?.email || ""}
+                    value={isHamletAccount ? userId : user?.email || ""}
                     readOnly
                     className="pl-9"
                   />

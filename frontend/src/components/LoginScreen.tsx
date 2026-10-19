@@ -8,8 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/components/Providers";
+import { saveHamletSession, type HamletSession } from "@/lib/hamletAuth";
 import { canUseLocalBypass } from "@/lib/localAuth";
 import { supabase } from "@/lib/supabase";
+import { API_BASE } from "@/lib/utils";
 
 const highlights = [
   "Private proposal workspace",
@@ -21,7 +23,7 @@ const prep = ["Upload grant package", "Complete community intake", "Review and e
 
 export function LoginScreen() {
   const router = useRouter();
-  const { startLocalSession } = useAuth();
+  const { startHamletSession, startLocalSession } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +38,27 @@ export function LoginScreen() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    const username = email.trim();
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const hamletResponse = await fetch(`${API_BASE}/api/auth/hamlet-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (hamletResponse.ok) {
+        const payload = (await hamletResponse.json()) as HamletSession;
+        saveHamletSession(payload);
+        startHamletSession(payload);
+        router.push("/dashboard");
+        return;
+      }
+      if (!username.includes("@")) {
+        const body = (await hamletResponse.json().catch(() => null)) as { detail?: string } | null;
+        setError(body?.detail || "That user ID or password is not recognized.");
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({ email: username, password });
       if (error) {
         setError(describeSignInError(error.message));
         return;
@@ -110,13 +131,14 @@ export function LoginScreen() {
               <CardContent className="space-y-4">
                 <form onSubmit={handleSignIn} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">User ID or email</Label>
                     <div className="relative">
                       <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="email"
-                        type="email"
-                        placeholder="you@example.com"
+                        type="text"
+                        autoComplete="username"
+                        placeholder="arviat"
                         className="pl-9"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -185,7 +207,7 @@ export function LoginScreen() {
 
 function describeSignInError(message: string) {
   if (/failed to fetch/i.test(message)) {
-    return "Sign-in could not reach Supabase, so the browser reported “Failed to fetch” before checking the password. The project URL in the frontend environment is not responding. Use Continue without signing in on this computer.";
+    return "Sign-in could not reach the server. Check that the app is running, then try the user ID and password again.";
   }
   return message;
 }
